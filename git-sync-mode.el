@@ -27,13 +27,17 @@
 
 ;;; Code:
 
+(require 'cl-lib)
+(require 'ansi-color)
+(require 'ansi-osc)
+
 (defcustom git-sync-allow-list nil
   "List of directories to sync with git-sync."
   :type '(repeat directory)
   :group 'git-sync
   :safe #'listp)
 
-(defun git-sync--sentinel-fn (process event)
+(defun git-sync--sentinel-fn (process _event)
   "Sentinel function for the git-sync PROCESS."
   (with-current-buffer (process-buffer process)
     (ansi-color-apply-on-region (point-min) (point-max))
@@ -42,6 +46,7 @@
     (special-mode)))
 
 (defun git-sync--execute ()
+  "Create a buffer and run git-sync."
   (when-let ((buffer (get-buffer "*git-sync*")))
     (with-current-buffer buffer
       (let ((inhibit-read-only t))
@@ -62,23 +67,26 @@
 
 (defun git-sync--global-after-save ()
   "Run git-sync on-save if the current buffer is in a subdirectory of one of the allowed directories."
-  (when (git-sync--allowed-subdirectory (buffer-file-name))
+  (when (git-sync--allowed-directory (buffer-file-name) git-sync-allow-list)
     (git-sync--execute)))
 
 (define-minor-mode git-sync-global-mode
   "A global minor mode to run git-sync."
   :lighter " git-sync"
   :global 't
-  :after-hook (if git-sync-mode
+  :group 'git-sync
+  :after-hook (if git-sync-global-mode
                   (setq-local after-save-hook (cons 'git-sync--global-after-save after-save-hook))
                 (setq-local after-save-hook (remove 'git-sync--global-after-save after-save-hook))))
 
 (defun git-sync--after-save ()
+  "Run git-sync on-save."
   (git-sync--execute))
 
 (define-minor-mode git-sync-mode
-  "Run git-sync on-save"
+  "Run git-sync on-save."
   :lighter " git-sync"
+  :group 'git-sync
   (if git-sync-mode
       (setq-local after-save-hook (cons 'git-sync--after-save after-save-hook))
     (setq-local after-save-hook (remove 'git-sync--after-save after-save-hook))))
