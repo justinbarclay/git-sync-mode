@@ -4,7 +4,7 @@
 
 ;; Author: Justin Barclay <github@justincbarclay.ca>
 ;; Keywords: vc, convenience
-;; Version: 0.1.1
+;; Version: 0.1.2
 ;; Homepage: https://github.com/justinbarclay/git-sync-mode
 ;; Package-Requires: ((emacs "29.1") (async-await))
 
@@ -94,17 +94,25 @@ The promise returns the event passed in by the sentinel functions"
                                     "Select the item to remove: "
                                     git-sync-deny-list))))
 
-(defun git-sync--allowed-directory (current-file allowed-dirs)
-  "Return t if CURRENT-FILE is in one of the ALLOWED-DIRS."
-  (cl-reduce (lambda (any-p allowed-dir)
-               (or any-p
-                   (string-prefix-p allowed-dir current-file)))
-             allowed-dirs
-             :initial-value nil))
+;; TODO: Make this less hacky doing it over two nearly identical reduce functions seems like overkill and hard to read
+(defun git-sync--allowed-directory (current-file)
+  "Return t if CURRENT-FILE is in the allow list but not the deny list."
+  (if (cl-reduce (lambda (any-p deny-dir)
+                   (or any-p
+                       (string-prefix-p deny-dir current-file)))
+                 git-sync-deny-list
+                 :initial-value nil)
+      nil ;; If in the deny list then return false
+    ;; Otherwise try the allowed list
+    (cl-reduce (lambda (any-p allowed-dir)
+                 (or any-p
+                     (string-prefix-p allowed-dir current-file)))
+               git-sync-allow-list
+               :initial-value nil)))
 
 (defun git-sync--global-after-save ()
   "Run git-sync on-save if the current buffer is in a subdirectory of one of the allowed directories."
-  (when (git-sync--allowed-directory (buffer-file-name) git-sync-allow-list)
+  (when (git-sync--allowed-directory (buffer-file-name))
     (git-sync--execute)))
 
 (defun git-sync--after-save ()
