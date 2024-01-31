@@ -6,7 +6,7 @@
 ;; Keywords: vc, convenience
 ;; Version: 0.1.0
 ;; Homepage: https://github.com/justinbarclay/git-sync-mode
-;; Package-Requires: ((emacs "29.1"))
+;; Package-Requires: ((emacs "29.1") (async-await))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -28,34 +28,71 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'ansi-color)
-(require 'ansi-osc)
+(require 'async-await)
 
-(defcustom git-sync-allow-list nil
-  "List of directories to sync with git-sync."
+(defgroup git-sync
+  nil
+  "Customizations for git-sync")
+
+(defcustom git-sync-allow-list '()
+  "A list of files that git-sync is allowed to run in. In case of conflict with the deny-list, the deny-list wins out."
+  :type '(repeat director)
+  :group 'git-sync)
+
+(defcustom git-sync-deny-list
+  '()
+  "A list of files that git-sync is not allowed to run in. In case of conflict with the allow-list, the deny-list wins out."
   :type '(repeat directory)
-  :group 'git-sync
-  :safe #'listp)
+  :group 'git-sync)
 
-(defun git-sync--sentinel-fn (process _event)
-  "Sentinel function for the git-sync PROCESS."
+(defun git-sync--commit-message ()
+  (format "changes from %s on %s" (system-name) (current-time-string)))
+
+(defun git-sync--sentinel-fn (process event)
   (with-current-buffer (process-buffer process)
-    (ansi-color-apply-on-region (point-min) (point-max))
-    (ansi-osc-apply-on-region (point-min) (point-max))
-    (goto-char (point-min))
     (special-mode)))
 
-(defun git-sync--execute ()
-  "Create a buffer and run git-sync."
-  (when-let ((buffer (get-buffer "*git-sync*")))
-    (with-current-buffer buffer
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (special-mode))))
-  (make-process :name "git-sync"
-                :buffer (get-buffer-create "*git-sync*")
-                :command '("git-sync" "-n" "-s")
-                :sentinel 'git-sync--sentinel-fn))
+(defun git-sync--execute-command (command)
+  "Execute `COMMAND' as a promise in the git-sync buffer.
+
+The promise returns the event passed in by the sentinel functions"
+  (promise-new (lambda (resolve reject)
+                 (let ((sentinel-fn (lambda (process event)
+                                      (git-sync--sentinel-fn process event)
+                                      (funcall resolve event))))
+                   (make-process :name "git-sync"
+                                 :buffer (get-buffer-create "*git-sync*")
+                                 :command command
+                                 :sentinel sentinel-fn)))))
+
+(async-defun git-sync--execute ()
+  (await (git-sync--execute-command '("git" "add" ".")))
+  (await (git-sync--execute-command (list "git" "commit" "-m" (git-sync--commit-message))))
+  (await (git-sync--execute-command '("git" "pull")))
+  (await (git-sync--execute-command '("git" "push")))
+  (message "git-sync complete"))
+
+(defun git-sync-add-to-allow-list ()
+  "Add directory to the `git-sync-allow-list'."
+  (interactive)
+  (add-to-list 'git-sync-allow-list (read-directory-name "Directory to add to git-sync-allow-list: ")))
+
+(defun git-sync-add-to-deny-list ()
+  "Add directory to the `git-sync-deny-list'."
+  (interactive)
+  (add-to-list 'git-sync-allow-list (read-directory-name "Directory to add to git-sync-deny-list: ")))
+
+(defun git-sync-remove-from-allow-list ()
+  "Remove an item from the `git-sync-allow-list'."
+  (setq git-sync-allow-list (remove (completing-read
+                                     "Select the item to remove: "
+                                     git-sync-allow-list))))
+
+(defun git-sync-remove-from-deny-list ()
+  "Remove an item from the `git-sync-deny-list'."
+  (setq git-sync-deny-list (remove (completing-read
+                                    "Select the item to remove: "
+                                    git-sync-deny-list))))
 
 (defun git-sync--allowed-directory (current-file allowed-dirs)
   "Return t if CURRENT-FILE is in one of the ALLOWED-DIRS."
