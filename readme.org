@@ -1,0 +1,34 @@
+* Git Sync Mode
+Sync your work, automatically after save.
+
+** Usage
+*** Install
+#+begin_src elisp
+  (use-package git-sync-mode
+    :vc (:url "https://github.com/justinbarclay/git-sync-mode"))
+#+end_src
+*** .dir-locals.el
+git-sync-mode can run automatically using [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Directory-Variables.html][dir-locals]], this gives you the benefit of controlling what file types it will run on.
+#+begin_src elisp
+;;; Directory Local Variables            -*- no-byte-compile: t -*-
+;;; For more information see (info "(emacs) Directory Variables")
+
+((prog-mode . ((mode . git-sync)))
+ (org-mode . ((mode . git-sync))))
+#+end_src
+*** global mode
+If you'd prefer to register your directories using custom variables there is the git-sync-global-mode and ~git-sync-allow-list~/~git-sync-deny-list~
+#+begin_src elisp
+  (use-package git-sync-mode
+    :vc (:url "https://github.com/justinbarclay/git-sync-mode")
+    :config
+    (git-sync-global-mode)
+    (add-to-list git-sync-allow-list '(/path/to/project))
+    (add-to-list git-sync-deny-list '(/path/to/project/subdir))
+#+end_src
+*** Helper commands
+- git-sync-add-to-deny-list
+- git-sync-add-to-deny-list
+- git-sync-remove-from-deny-list
+- git-sync-remove-from-allow-list
+
