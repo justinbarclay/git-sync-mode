@@ -4,7 +4,7 @@
 
 ;; Author: Justin Barclay <github@justincbarclay.ca>
 ;; Keywords: vc, convenience
-;; Version: 0.1.0
+;; Version: 0.1.1
 ;; Homepage: https://github.com/justinbarclay/git-sync-mode
 ;; Package-Requires: ((emacs "29.1") (async-await))
 
@@ -107,6 +107,11 @@ The promise returns the event passed in by the sentinel functions"
   (when (git-sync--allowed-directory (buffer-file-name) git-sync-allow-list)
     (git-sync--execute)))
 
+(defun git-sync--after-save ()
+  "Run git-sync on-save."
+  (git-sync--execute))
+
+;;;###autoload
 (define-minor-mode git-sync-global-mode
   "A global minor mode to run git-sync."
   :lighter " git-sync"
@@ -116,10 +121,7 @@ The promise returns the event passed in by the sentinel functions"
                   (setq-local after-save-hook (cons 'git-sync--global-after-save after-save-hook))
                 (setq-local after-save-hook (remove 'git-sync--global-after-save after-save-hook))))
 
-(defun git-sync--after-save ()
-  "Run git-sync on-save."
-  (git-sync--execute))
-
+;;;###autoload
 (define-minor-mode git-sync-mode
   "Run git-sync on-save."
   :lighter " git-sync"
