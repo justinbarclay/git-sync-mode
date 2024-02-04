@@ -36,7 +36,7 @@
 
 (defcustom git-sync-allow-list '()
   "A list of files that git-sync is allowed to run in. In case of conflict with the deny-list, the deny-list wins out."
-  :type '(repeat director)
+  :type '(repeat directory)
   :group 'git-sync)
 
 (defcustom git-sync-deny-list
