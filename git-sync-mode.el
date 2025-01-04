@@ -45,6 +45,11 @@
   :type '(repeat directory)
   :group 'git-sync)
 
+(defcustom git-sync-generate-message #'git-sync--commit-message
+  "A function that generates the commit message for git-sync."
+  :type '(function)
+  :group 'git-sync)
+
 (defun git-sync--commit-message ()
   (format "changes from %s on %s" (system-name) (current-time-string)))
 
@@ -67,7 +72,7 @@ The promise returns the event passed in by the sentinel functions"
 
 (async-defun git-sync--execute ()
   (await (git-sync--execute-command '("git" "add" ".")))
-  (await (git-sync--execute-command (list "git" "commit" "-m" (git-sync--commit-message))))
+  (await (git-sync--execute-command (list "git" "commit" "-m" (git-sync-generate-message))))
   (await (git-sync--execute-command '("git" "pull")))
   (await (git-sync--execute-command '("git" "push")))
   (message "git-sync complete"))
