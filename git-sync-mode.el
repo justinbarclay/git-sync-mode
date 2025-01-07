@@ -79,29 +79,30 @@ The promise returns the event passed in by the sentinel functions"
              git-sync-allow-list
              :initial-value nil))
 
+(defun git-sync--maybe ()
+  "Call `git-sync-enable-functions' to determine if git-sync is allowed to be enabled for this buffer."
+  (when (run-hook-with-args-until-success
+         'git-sync-enable-functions)
+    (git-sync-mode)))
 
 (defun git-sync--after-save ()
   "Run git-sync on-save."
   (git-sync--execute))
 
 ;;;###autoload
-(define-minor-mode git-sync-global-mode
-  "A global minor mode to run git-sync."
-  :lighter " git-sync"
-  :global 't
-  :group 'git-sync
-  :after-hook (if git-sync-global-mode
-                  (setq-local after-save-hook (cons 'git-sync--global-after-save after-save-hook))
-                (setq-local after-save-hook (remove 'git-sync--global-after-save after-save-hook))))
-
-;;;###autoload
 (define-minor-mode git-sync-mode
-  "Run git-sync on-save."
+  "Commit, save and push your changes on-save."
   :lighter " git-sync"
   :group 'git-sync
   (if git-sync-mode
-      (setq-local after-save-hook (cons 'git-sync--after-save after-save-hook))
-    (setq-local after-save-hook (remove 'git-sync--after-save after-save-hook))))
+      (add-hook 'after-save-hook #'git-sync--after-save nil 'local)
+    (remove-hook 'after-save-hook #'git-sync--after-save 'local)))
+
+;;;###autoload
+(define-globalized-minor-mode git-sync-global-mode
+  git-sync-mode
+  git-sync--maybe
+  :group 'git-sync)
 
 (provide 'git-sync-mode)
 ;;; git-sync-mode.el ends here
