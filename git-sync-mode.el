@@ -39,12 +39,6 @@
   :type '(repeat directory)
   :group 'git-sync)
 
-(defcustom git-sync-deny-list
-  '()
-  "A list of files that git-sync is not allowed to run in. In case of conflict with the allow-list, the deny-list wins out."
-  :type '(repeat directory)
-  :group 'git-sync)
-
 (defcustom git-sync-generate-message #'git-sync--commit-message
   "A function that generates the commit message for git-sync."
   :type '(function)
@@ -77,48 +71,14 @@ The promise returns the event passed in by the sentinel functions"
   (await (git-sync--execute-command '("git" "push")))
   (message "git-sync complete"))
 
-(defun git-sync-add-to-allow-list ()
-  "Add directory to the `git-sync-allow-list'."
-  (interactive)
-  (add-to-list 'git-sync-allow-list (read-directory-name "Directory to add to git-sync-allow-list: ")))
-
-(defun git-sync-add-to-deny-list ()
-  "Add directory to the `git-sync-deny-list'."
-  (interactive)
-  (add-to-list 'git-sync-allow-list (read-directory-name "Directory to add to git-sync-deny-list: ")))
-
-(defun git-sync-remove-from-allow-list ()
-  "Remove an item from the `git-sync-allow-list'."
-  (setq git-sync-allow-list (remove (completing-read
-                                     "Select the item to remove: "
-                                     git-sync-allow-list))))
-
-(defun git-sync-remove-from-deny-list ()
-  "Remove an item from the `git-sync-deny-list'."
-  (setq git-sync-deny-list (remove (completing-read
-                                    "Select the item to remove: "
-                                    git-sync-deny-list))))
-
-;; TODO: Make this less hacky doing it over two nearly identical reduce functions seems like overkill and hard to read
 (defun git-sync--allowed-directory (current-file)
-  "Return t if CURRENT-FILE is in the allow list but not the deny list."
-  (if (cl-reduce (lambda (any-p deny-dir)
-                   (or any-p
-                       (string-prefix-p deny-dir current-file)))
-                 git-sync-deny-list
-                 :initial-value nil)
-      nil ;; If in the deny list then return false
-    ;; Otherwise try the allowed list
-    (cl-reduce (lambda (any-p allowed-dir)
-                 (or any-p
-                     (string-prefix-p allowed-dir current-file)))
-               git-sync-allow-list
-               :initial-value nil)))
+  "Return non-nil if CURRENT-FILE is in the allow list."
+  (cl-reduce (lambda (any-p allowed-dir)
+               (or any-p
+                   (string-prefix-p allowed-dir current-file)))
+             git-sync-allow-list
+             :initial-value nil))
 
-(defun git-sync--global-after-save ()
-  "Run git-sync on-save if the current buffer is in a subdirectory of one of the allowed directories."
-  (when (git-sync--allowed-directory (buffer-file-name))
-    (git-sync--execute)))
 
 (defun git-sync--after-save ()
   "Run git-sync on-save."
