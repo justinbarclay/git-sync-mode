@@ -8,7 +8,7 @@ Sync your work, automatically after save.
     :vc (:url "https://github.com/justinbarclay/git-sync-mode"))
 #+end_src
 *** .dir-locals.el
-git-sync-mode can run automatically using [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Directory-Variables.html][dir-locals]], this gives you the benefit of controlling what file types it will run on.
+=git-sync-mode= can run automatically using [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Directory-Variables.html][dir-locals]], this gives you the benefit of controlling what file types it will run on.
 #+begin_src elisp
 ;;; Directory Local Variables            -*- no-byte-compile: t -*-
 ;;; For more information see (info "(emacs) Directory Variables")
@@ -16,19 +16,24 @@ git-sync-mode can run automatically using [[https://www.gnu.org/software/emacs/m
 ((prog-mode . ((mode . git-sync)))
  (org-mode . ((mode . git-sync))))
 #+end_src
-*** global mode
-If you'd prefer to register your directories using custom variables there is the git-sync-global-mode and ~git-sync-allow-list~/~git-sync-deny-list~
+*** Global mode
+You can also use =git-sync-allow-list= to tell =git-sync-global-mode= which projects/directories git-sync should work in.
 #+begin_src elisp
   (use-package git-sync-mode
     :vc (:url "https://github.com/justinbarclay/git-sync-mode")
     :config
     (git-sync-global-mode)
-    (add-to-list git-sync-allow-list '(/path/to/project))
-    (add-to-list git-sync-deny-list '(/path/to/project/subdir))
+    (add-to-list git-sync-allow-list '("/path/to/project")))
 #+end_src
-*** Helper commands
-- git-sync-add-to-deny-list
-- git-sync-add-to-deny-list
-- git-sync-remove-from-deny-list
-- git-sync-remove-from-allow-list
+*** Customization
+- =git-sync-generate-message=: The function called to generate the commit message. This function takes no argument but is run within the context of the current buffer.
+
+#+begin_src elisp
+  (defun my/commit-message ()
+    (format "changes from %s on %s" (system-name) (current-time-string)))
+
+  (setq git-sync-generate-message #'my/commit-message)
+#+end_src
+
+- =git-sync-allow-list=: List of directories that =git-sync-mode= can run in. If any the directory is a parent of the current file git-sync-mode will be enabled.
 
