@@ -39,10 +39,9 @@
   :type '(repeat directory)
   :group 'git-sync)
 
-(defcustom git-sync-deny-list
-  '()
-  "A list of files that git-sync is not allowed to run in. In case of conflict with the allow-list, the deny-list wins out."
-  :type '(repeat directory)
+(defcustom git-sync-generate-message #'git-sync--commit-message
+  "A function that generates the commit message for git-sync."
+  :type '(function)
   :group 'git-sync)
 
 (defun git-sync--commit-message ()
@@ -67,76 +66,43 @@ The promise returns the event passed in by the sentinel functions"
 
 (async-defun git-sync--execute ()
   (await (git-sync--execute-command '("git" "add" ".")))
-  (await (git-sync--execute-command (list "git" "commit" "-m" (git-sync--commit-message))))
+  (await (git-sync--execute-command (list "git" "commit" "-m" (git-sync-generate-message))))
   (await (git-sync--execute-command '("git" "pull")))
   (await (git-sync--execute-command '("git" "push")))
   (message "git-sync complete"))
 
-(defun git-sync-add-to-allow-list ()
-  "Add directory to the `git-sync-allow-list'."
-  (interactive)
-  (add-to-list 'git-sync-allow-list (read-directory-name "Directory to add to git-sync-allow-list: ")))
-
-(defun git-sync-add-to-deny-list ()
-  "Add directory to the `git-sync-deny-list'."
-  (interactive)
-  (add-to-list 'git-sync-allow-list (read-directory-name "Directory to add to git-sync-deny-list: ")))
-
-(defun git-sync-remove-from-allow-list ()
-  "Remove an item from the `git-sync-allow-list'."
-  (setq git-sync-allow-list (remove (completing-read
-                                     "Select the item to remove: "
-                                     git-sync-allow-list))))
-
-(defun git-sync-remove-from-deny-list ()
-  "Remove an item from the `git-sync-deny-list'."
-  (setq git-sync-deny-list (remove (completing-read
-                                    "Select the item to remove: "
-                                    git-sync-deny-list))))
-
-;; TODO: Make this less hacky doing it over two nearly identical reduce functions seems like overkill and hard to read
 (defun git-sync--allowed-directory (current-file)
-  "Return t if CURRENT-FILE is in the allow list but not the deny list."
-  (if (cl-reduce (lambda (any-p deny-dir)
-                   (or any-p
-                       (string-prefix-p deny-dir current-file)))
-                 git-sync-deny-list
-                 :initial-value nil)
-      nil ;; If in the deny list then return false
-    ;; Otherwise try the allowed list
-    (cl-reduce (lambda (any-p allowed-dir)
-                 (or any-p
-                     (string-prefix-p allowed-dir current-file)))
-               git-sync-allow-list
-               :initial-value nil)))
+  "Return non-nil if CURRENT-FILE is in the allow list."
+  (cl-reduce (lambda (any-p allowed-dir)
+               (or any-p
+                   (string-prefix-p allowed-dir current-file)))
+             git-sync-allow-list
+             :initial-value nil))
 
-(defun git-sync--global-after-save ()
-  "Run git-sync on-save if the current buffer is in a subdirectory of one of the allowed directories."
-  (when (git-sync--allowed-directory (buffer-file-name))
-    (git-sync--execute)))
+(defun git-sync--maybe ()
+  "Call `git-sync-enable-functions' to determine if git-sync is allowed to be enabled for this buffer."
+  (when (run-hook-with-args-until-success
+         'git-sync-enable-functions)
+    (git-sync-mode)))
 
 (defun git-sync--after-save ()
   "Run git-sync on-save."
   (git-sync--execute))
 
 ;;;###autoload
-(define-minor-mode git-sync-global-mode
-  "A global minor mode to run git-sync."
-  :lighter " git-sync"
-  :global 't
-  :group 'git-sync
-  :after-hook (if git-sync-global-mode
-                  (setq-local after-save-hook (cons 'git-sync--global-after-save after-save-hook))
-                (setq-local after-save-hook (remove 'git-sync--global-after-save after-save-hook))))
-
-;;;###autoload
 (define-minor-mode git-sync-mode
-  "Run git-sync on-save."
+  "Commit, save and push your changes on-save."
   :lighter " git-sync"
   :group 'git-sync
   (if git-sync-mode
-      (setq-local after-save-hook (cons 'git-sync--after-save after-save-hook))
-    (setq-local after-save-hook (remove 'git-sync--after-save after-save-hook))))
+      (add-hook 'after-save-hook #'git-sync--after-save nil 'local)
+    (remove-hook 'after-save-hook #'git-sync--after-save 'local)))
+
+;;;###autoload
+(define-globalized-minor-mode git-sync-global-mode
+  git-sync-mode
+  git-sync--maybe
+  :group 'git-sync)
 
 (provide 'git-sync-mode)
 ;;; git-sync-mode.el ends here
