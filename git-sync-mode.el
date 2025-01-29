@@ -97,7 +97,9 @@ The promise returns the event passed in by the sentinel functions"
   :lighter " git-sync"
   :group 'git-sync
   (if git-sync-mode
-      (add-hook 'after-save-hook #'git-sync--after-save nil 'local)
+      (progn
+        (git-sync--execute)
+        (add-hook 'after-save-hook #'git-sync--after-save nil 'local))
     (remove-hook 'after-save-hook #'git-sync--after-save 'local)))
 
 ;;;###autoload
