@@ -35,7 +35,10 @@
   "Customizations for git-sync")
 
 (defcustom git-sync-allow-list '()
-  "A list of files that git-sync is allowed to run in. In case of conflict with the deny-list, the deny-list wins out."
+  "A list of directories or files that git-sync is allowed to run in.
+
+If any of the directories of files are a prefix of the current-file
+git-sync-mode will be enabled."
   :type '(repeat directory)
   :group 'git-sync)
 
@@ -80,9 +83,8 @@ The promise returns the event passed in by the sentinel functions"
              :initial-value nil))
 
 (defun git-sync--maybe ()
-  "Call `git-sync-enable-functions' to determine if git-sync is allowed to be enabled for this buffer."
-  (when (run-hook-with-args-until-success
-         'git-sync-enable-functions)
+  "Call `git-sync--allowed-directory' to determine if git-sync is allowed to be enabled for this buffer."
+  (when (git-sync--allowed-directory)
     (git-sync-mode)))
 
 (defun git-sync--after-save ()
