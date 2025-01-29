@@ -69,7 +69,7 @@ The promise returns the event passed in by the sentinel functions"
 
 (async-defun git-sync--execute ()
   (await (git-sync--execute-command '("git" "add" ".")))
-  (await (git-sync--execute-command (list "git" "commit" "-m" (git-sync-generate-message))))
+  (await (git-sync--execute-command (list "git" "commit" "-m" (funcall git-sync-generate-message))))
   (await (git-sync--execute-command '("git" "pull")))
   (await (git-sync--execute-command '("git" "push")))
   (message "git-sync complete"))
