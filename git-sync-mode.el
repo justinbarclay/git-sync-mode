@@ -78,6 +78,7 @@ The promise returns the event passed in by the sentinel functions"
   "Return non-nil if CURRENT-FILE is in the allow list."
   (cl-reduce (lambda (any-p allowed-dir)
                (or any-p
+                   (not (minibufferp))
                    (string-prefix-p allowed-dir current-file)))
              git-sync-allow-list
              :initial-value nil))
