@@ -29,6 +29,7 @@
 
 (require 'cl-lib)
 (require 'async-await)
+(require 'ansi-color)
 
 (defgroup git-sync
   nil
@@ -51,8 +52,13 @@ git-sync-mode will be enabled."
   (format "changes from %s on %s" (system-name) (current-time-string)))
 
 (defun git-sync--sentinel-fn (process event)
-  (with-current-buffer (process-buffer process)
-    (special-mode)))
+  "Colourizes the git-sync log buffer for `PROCESS' on `EVENT'."
+  (let ((buf (process-buffer process)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (ansi-color-apply-on-region (point-min) (point-max))
+        (goto-char (point-max))
+        (special-mode)))))
 
 (defun git-sync--execute-command (command &optional dir)
   "Execute `COMMAND' as a promise in the git-sync buffer.
