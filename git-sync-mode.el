@@ -90,7 +90,7 @@ The promise returns the event passed in by the sentinel functions"
 
 (defun git-sync--maybe ()
   "Call `git-sync--allowed-directory' to determine if git-sync is allowed to be enabled for this buffer."
-  (when (git-sync--allowed-directory)
+  (when (git-sync--allowed-directory (buffer-file-name))
     (git-sync-mode)))
 
 (defun git-sync--after-save ()
