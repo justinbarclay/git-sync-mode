@@ -54,25 +54,30 @@ git-sync-mode will be enabled."
   (with-current-buffer (process-buffer process)
     (special-mode)))
 
-(defun git-sync--execute-command (command)
+(defun git-sync--execute-command (command &optional dir)
   "Execute `COMMAND' as a promise in the git-sync buffer.
 
+If `DIR' is provided, set `default-directory' to it for the command.
 The promise returns the event passed in by the sentinel functions"
-  (promise-new (lambda (resolve reject)
-                 (let ((sentinel-fn (lambda (process event)
-                                      (git-sync--sentinel-fn process event)
-                                      (funcall resolve event))))
-                   (make-process :name "git-sync"
-                                 :buffer (get-buffer-create "*git-sync*")
-                                 :command command
-                                 :sentinel sentinel-fn)))))
+  (let ((dir (or dir default-directory)))
+    (promise-new (lambda (resolve reject)
+                   (let ((sentinel-fn (lambda (process event)
+                                        (git-sync--sentinel-fn process event)
+                                        (funcall resolve event)))
+                         (default-directory dir))
+                     (make-process :name "git-sync"
+                                   :buffer (get-buffer-create (format "*git-sync:%s*" dir))
+                                   :command command
+                                   :sentinel sentinel-fn))))))
 
 (async-defun git-sync--execute ()
-  (await (git-sync--execute-command '("git" "add" ".")))
-  (await (git-sync--execute-command (list "git" "commit" "-m" (funcall git-sync-generate-message))))
-  (await (git-sync--execute-command '("git" "pull")))
-  (await (git-sync--execute-command '("git" "push")))
-  (message "git-sync complete"))
+  (let ((dir default-directory)
+    (await (git-sync--execute-command '("git" "add" ".") dir))
+    (await (git-sync--execute-command (list "git" "commit" "-m" git-message) dir))
+    (await (git-sync--execute-command '("git" "pull") dir))
+    (await (git-sync--execute-command '("git" "push") dir))
+    (message "git-sync complete")))
+        (git-message (funcall git-sync-generate-message)))
 
 (defun git-sync--allowed-directory (current-file)
   "Return non-nil if CURRENT-FILE is in the allow list."
