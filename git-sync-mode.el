@@ -63,7 +63,10 @@ The promise returns the event passed in by the sentinel functions"
     (promise-new (lambda (resolve reject)
                    (let ((sentinel-fn (lambda (process event)
                                         (git-sync--sentinel-fn process event)
-                                        (funcall resolve event)))
+                                        (when (memq (process-status process) '(exit signal))
+                                          (if (zerop (process-exit-status process))
+                                              (funcall resolve event)
+                                            (funcall reject (format "Command failed: %s" event))))))
                          (default-directory dir))
                      (make-process :name "git-sync"
                                    :buffer (get-buffer-create (format "*git-sync:%s*" dir))
@@ -72,12 +75,15 @@ The promise returns the event passed in by the sentinel functions"
 
 (async-defun git-sync--execute ()
   (let ((dir default-directory)
-    (await (git-sync--execute-command '("git" "add" ".") dir))
-    (await (git-sync--execute-command (list "git" "commit" "-m" git-message) dir))
-    (await (git-sync--execute-command '("git" "pull") dir))
-    (await (git-sync--execute-command '("git" "push") dir))
-    (message "git-sync complete")))
         (git-message (funcall git-sync-generate-message)))
+    (condition-case err
+        (progn
+          (await (git-sync--execute-command '("git" "add" ".") dir))
+          (await (git-sync--execute-command (list "git" "commit" "-m" git-message) dir))
+          (await (git-sync--execute-command '("git" "pull") dir))
+          (await (git-sync--execute-command '("git" "push") dir))
+          (message "git-sync complete"))
+      (error (message "git-sync failed: %s" err)))))
 
 (defun git-sync--allowed-directory (current-file)
   "Return non-nil if CURRENT-FILE is in the allow list."
