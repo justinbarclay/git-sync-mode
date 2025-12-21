@@ -33,7 +33,8 @@
 
 (defgroup git-sync
   nil
-  "Customizations for git-sync")
+  "Customizations for git-sync"
+  :group 'vc)
 
 (defcustom git-sync-allow-list '()
   "A list of directories or files that git-sync is allowed to run in.
@@ -64,7 +65,7 @@ git-sync-mode will be enabled."
 (defun git-sync--commit-message ()
   (format "changes from %s on %s" (system-name) (current-time-string)))
 
-(defun git-sync--sentinel-fn (process event)
+(defun git-sync--sentinel-fn (process _event)
   "Colourizes the git-sync log buffer for `PROCESS' on `EVENT'."
   (let ((buf (process-buffer process)))
     (when (buffer-live-p buf)
@@ -98,7 +99,7 @@ git-sync-mode will be enabled."
           (ignore-error (process-get process 'git-sync-ignore-error)))
       (if (or ignore-error
               (zerop (process-exit-status process)))
-          (funcall resolve (string-trim git-sync--last-output))
+          (funcall resolve (string-trim (or git-sync--last-output "")))
         (funcall reject (format "Command failed: %s" event))))))
 
 (defun git-sync--execute-command (command dir &optional ignore-error)
@@ -124,13 +125,16 @@ otherwise it rejects with the process event."
 (async-defun git-sync--get-upstream-branch (dir)
   "Get the upstream branch for the current branch in `DIR`."
   (condition-case err
-      (setq upstream (string-trim (await (git-sync--execute-command '("git" "rev-parse" "--abbrev-ref" "@{u}") dir))))
-    (error (message "git-sync: No upstream branch found for current branch."))))
+      (string-trim (await (git-sync--execute-command '("git" "rev-parse" "--abbrev-ref" "@{u}") dir)))
+    (error (message "git-sync: No upstream branch found for current branch.\n%s" err))))
 
 
 (async-defun git-sync--get-sync-state (dir upstream)
   "Get the sync state between HEAD and `UPSTREAM` in `DIR`."
-  (let* ((output (string-trim (await (git-sync--execute-command (list "git" "rev-list" "--count" "--left-right" (concat upstream "...HEAD")) dir))))
+  (let* ((output (string-trim
+                  (await (git-sync--execute-command
+                          (list "git" "rev-list" "--count" "--left-right" (concat upstream "...HEAD"))
+                          dir))))
          (parts (split-string output "\t"))
          (behind (string-to-number (car parts)))
          (ahead (string-to-number (cadr parts))))
@@ -196,7 +200,8 @@ The git sync process includes:
   3.1 Finish if no upstream branch
   3.2 Fetching from remote
   4.  Determining sync state
-  5.  Performing necessary actions based on sync state (fast-forward, rebase, push)"
+  5.  Performing necessary actions based on sync state
+      (fast-forward, rebase, push)."
   (condition-case err
       (let (upstream)
         (when (await (git-sync--has-changes-p dir))
@@ -260,13 +265,13 @@ The git sync process includes:
                   :initial-value nil)))
 
 (defun git-sync--maybe ()
-  "Call `git-sync--allowed-directory' to determine if git-sync is allowed to be enabled for this buffer."
+  "Determine if current buffer is apart of allowed directory."
   (when (git-sync--allowed-directory (buffer-file-name))
     (git-sync-mode)))
 
 (defun git-sync--after-save ()
   "Run git-sync on-save."
-  (git-sync--validate-and-run default-directory))
+  (git-sync--validate-and-run))
 
 ;;;###autoload
 (define-minor-mode git-sync-mode
@@ -279,7 +284,8 @@ The git sync process includes:
                  (locate-dominating-file default-directory ".git"))
       (setq git-sync-mode nil)
       (user-error "git-sync-mode: git executable or .git directory not found"))
-    (await (git-sync--validate-and-run default-directory))
+    ;; Runs asynchronously
+    (git-sync--validate-and-run)
     (add-hook 'after-save-hook #'git-sync--after-save nil 'local))
    (t
     (remove-hook 'after-save-hook #'git-sync--after-save 'local))))
