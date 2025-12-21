@@ -119,6 +119,20 @@ otherwise it rejects with the process event."
        (await (git-sync--execute-command '("git" "diff" "--name-only") dir))
        0)))
 
+(defun git-sync--repo-state (dir)
+  "Return the current git repository state in `DIR'."
+  (let* ((root (locate-dominating-file dir ".git"))
+         (git-dir (and root (expand-file-name ".git" root))))
+    (cond
+     ((and git-dir (file-exists-p (expand-file-name "rebase-merge/interactive" git-dir))) "REBASE-i")
+     ((and git-dir (file-exists-p (expand-file-name "rebase-merge" git-dir))) "REBASE-m")
+     ((and git-dir (file-exists-p (expand-file-name "rebase-apply" git-dir))) "AM/REBASE")
+     ((and git-dir (file-exists-p (expand-file-name "MERGE_HEAD" git-dir))) "MERGING")
+     ((and git-dir (file-exists-p (expand-file-name "CHERRY_PICK_HEAD" git-dir))) "CHERRY-PICKING")
+     ((and git-dir (file-exists-p (expand-file-name "BISECT_LOG" git-dir))) "BISECTING")
+     ((and git-dir (file-exists-p (expand-file-name "REVERT_HEAD" git-dir))) "REVERTING")
+     (t "NORMAL"))))
+
 (defun git-sync--is-locked-p (dir)
   "Return non-nil if a .git/index.lock file exists in the repository root of `DIR'."
   (let* ((root (locate-dominating-file dir ".git"))
@@ -140,6 +154,20 @@ otherwise it rejects with the process event."
                (funcall git-sync-generate-message))
          (when git-sync-skip-verify
            "--no-verify")))
+
+(async-defun git-sync--validate-and-run ()
+  "Validate the git repository state and run git-sync."
+  (let* ((dir default-directory))
+    (cond
+     ((git-sync--is-locked-p dir)
+      (message "git-sync: repository is locked, skipping sync"))
+     ((not (string= (git-sync--repo-state dir) "NORMAL"))
+      (message "git-sync: repository is in a special state (%s), skipping sync"
+               (git-sync--repo-state dir)))
+     ((not (await (git-sync--has-changes-p dir)))
+      (message "git-sync: no changes to commit, skipping sync"))
+     (t
+      (await (git-sync--execute))))))
 
 (async-defun git-sync--execute (dir)
   (condition-case err
@@ -166,18 +194,23 @@ otherwise it rejects with the process event."
 
 (defun git-sync--after-save ()
   "Run git-sync on-save."
-  (git-sync--execute))
+  (git-sync--validate-and-run default-directory))
 
 ;;;###autoload
 (define-minor-mode git-sync-mode
   "Commit, save and push your changes on-save."
   :lighter " git-sync"
   :group 'git-sync
-  (if git-sync-mode
-      (progn
-        (git-sync--execute)
-        (add-hook 'after-save-hook #'git-sync--after-save nil 'local))
-    (remove-hook 'after-save-hook #'git-sync--after-save 'local)))
+  (cond
+   (git-sync-mode
+    (unless (and (executable-find "git")
+                 (locate-dominating-file default-directory ".git"))
+      (setq git-sync-mode nil)
+      (user-error "git-sync-mode: git executable or .git directory not found"))
+    (await (git-sync--validate-and-run default-directory))
+    (add-hook 'after-save-hook #'git-sync--after-save nil 'local))
+   (t
+    (remove-hook 'after-save-hook #'git-sync--after-save 'local))))
 
 ;;;###autoload
 (define-globalized-minor-mode git-sync-global-mode
