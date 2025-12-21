@@ -4,7 +4,7 @@
 
 ;; Author: Justin Barclay <github@justincbarclay.ca>
 ;; Keywords: vc, convenience
-;; Version: 0.1.2
+;; Version: 0.5.0
 ;; Homepage: https://github.com/justinbarclay/git-sync-mode
 ;; Package-Requires: ((emacs "29.1") (async-await))
 
@@ -120,16 +120,25 @@ otherwise it rejects with the process event."
                    (process-put process 'git-sync-resolve resolve)
                    (process-put process 'git-sync-reject reject)
                    (process-put process 'git-sync-ignore-error ignore-error)))))
+;; State functions
+(async-defun git-sync--get-upstream-branch (dir)
+  "Get the upstream branch for the current branch in `DIR`."
+  (condition-case err
+      (setq upstream (string-trim (await (git-sync--execute-command '("git" "rev-parse" "--abbrev-ref" "@{u}") dir))))
+    (error (message "git-sync: No upstream branch found for current branch."))))
 
-;; Guard functions
-(async-defun git-sync--has-changes-p (dir)
-  "Return non-nil if there are staged changes in `DIR'."
-  (or (length>
-       (await (git-sync--execute-command '("git" "diff" "--cached" "--name-only") dir))
-       0)
-      (length>
-       (await (git-sync--execute-command '("git" "diff" "--name-only") dir))
-       0)))
+
+(async-defun git-sync--get-sync-state (dir upstream)
+  "Get the sync state between HEAD and `UPSTREAM` in `DIR`."
+  (let* ((output (string-trim (await (git-sync--execute-command (list "git" "rev-list" "--count" "--left-right" (concat upstream "...HEAD")) dir))))
+         (parts (split-string output "\t"))
+         (behind (string-to-number (car parts)))
+         (ahead (string-to-number (cadr parts))))
+    (cond
+     ((and (= 0 ahead) (= 0 behind)) :equal)
+     ((> ahead 0) (if (> behind 0) :diverged :ahead))
+     ((> behind 0) :behind)
+     (t (error "Could not determine sync state")))))
 
 (defun git-sync--repo-state (dir)
   "Return the current git repository state in `DIR'."
@@ -145,6 +154,16 @@ otherwise it rejects with the process event."
      ((and git-dir (file-exists-p (expand-file-name "REVERT_HEAD" git-dir))) "REVERTING")
      (t "NORMAL"))))
 
+;; Guard functions
+(async-defun git-sync--has-changes-p (dir)
+  "Return non-nil if there are staged changes in `DIR'."
+  (or (length>
+       (await (git-sync--execute-command '("git" "diff" "--cached" "--name-only") dir))
+       0)
+      (length>
+       (await (git-sync--execute-command '("git" "diff" "--name-only") dir))
+       0)))
+
 (defun git-sync--is-locked-p (dir)
   "Return non-nil if a .git/index.lock file exists in the repository root of `DIR'."
   (let* ((root (locate-dominating-file dir ".git"))
@@ -158,14 +177,60 @@ otherwise it rejects with the process event."
       '("git" "add" "--all" ".")
     '("git" "add" "-u")))
 
-(defun git-sync--commit-command (message)
-  "Return the git commit command with `MESSAGE'."
+(defun git-sync--commit-command ()
+  "Return the git commit command."
   (nconc (list "git"
                "commit"
                "-m"
                (funcall git-sync-generate-message))
          (when git-sync-skip-verify
-           "--no-verify")))
+           '("--no-verify"))))
+
+;; Execute
+(async-defun git-sync--execute (dir)
+  "Execute the git-sync process in `DIR`.
+
+The git sync process includes:
+  1.  Committing local changes
+  2.  Validating the existence of an upstream branch
+  3.1 Finish if no upstream branch
+  3.2 Fetching from remote
+  4.  Determining sync state
+  5.  Performing necessary actions based on sync state (fast-forward, rebase, push)"
+  (condition-case err
+      (let (upstream)
+        (when (await (git-sync--has-changes-p dir))
+          (message "git-sync: Committing local changes...")
+          (await (git-sync--execute-command (git-sync--add-command) dir))
+          (await (git-sync--execute-command (git-sync--commit-command) dir)))
+
+        (setq upstream (await (git-sync--get-upstream-branch dir)))
+
+        (when upstream
+          (message "git-sync: Fetching from remote...")
+          (await (git-sync--execute-command '("git" "fetch") dir))
+
+          (let ((state (await (git-sync--get-sync-state dir upstream))))
+            (pcase state
+              (:equal) ;; No action needed
+
+              (:ahead
+               (await (git-sync--execute-command '("git" "push") dir)))
+
+              (:behind
+               (message "git-sync: Behind remote. Fast-forwarding...")
+               ;; Safe guard with --ff-only to avoid unwanted merges.
+               ;;
+               ;; If the state was misidentified and the branches had
+               ;; actually diverged, =--ff-only= would fail,
+               ;; preventing an unwanted merge commit.
+               (await (git-sync--execute-command '("git" "merge" "--ff-only" "@{u}") dir)))
+
+              (:diverged
+               (await (git-sync--execute-command '("git" "rebase" "@{u}") dir))
+               (await (git-sync--execute-command '("git" "push") dir))))
+            (message "git-sync: Sync complete."))))
+    (error (message "git-sync failed: %s" (cadr err)))))
 
 (async-defun git-sync--validate-and-run ()
   "Validate the git repository state and run git-sync."
@@ -176,20 +241,9 @@ otherwise it rejects with the process event."
      ((not (string= (git-sync--repo-state dir) "NORMAL"))
       (message "git-sync: repository is in a special state (%s), skipping sync"
                (git-sync--repo-state dir)))
-     ((not (await (git-sync--has-changes-p dir)))
-      (message "git-sync: no changes to commit, skipping sync"))
      (t
+      (message "git-sync: starting...")
       (await (git-sync--execute dir))))))
-
-(async-defun git-sync--execute (dir)
-  (condition-case err
-      (progn
-        (await (git-sync--execute-command (git-sync--add-command) dir))
-        (await (git-sync--execute-command (git-sync--commit-command) dir))
-        (await (git-sync--execute-command '("git" "pull") dir))
-        (await (git-sync--execute-command '("git" "push") dir))
-        (message "git-sync complete"))
-    (error (message "git-sync failed: %s" err))))
 
 (defun git-sync--allowed-directory (current-file)
   "Return non-nil if CURRENT-FILE is in the allow list."
