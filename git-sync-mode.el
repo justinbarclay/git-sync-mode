@@ -58,6 +58,9 @@ git-sync-mode will be enabled."
   :type 'boolean
   :group 'git-sync)
 
+(defvar-local git-sync--last-output nil
+  "Holds the last output from git-sync process.")
+
 (defun git-sync--commit-message ()
   (format "changes from %s on %s" (system-name) (current-time-string)))
 
@@ -72,6 +75,32 @@ git-sync-mode will be enabled."
           (unless (derived-mode-p 'special-mode)
             (special-mode)))))))
 
+(defun git-sync--process-filter (process string)
+  "Filter function for git-sync."
+  (when (buffer-live-p (process-buffer process))
+    (with-current-buffer (process-buffer process)
+      (let ((moving (= (point) (process-mark process)))
+            (inhibit-read-only 't))
+        (save-excursion
+          ;; Insert the text, advancing the process marker.
+          (goto-char (process-mark process))
+          (insert string)
+          (set-marker (process-mark process) (point)))
+        (if moving (goto-char (process-mark process)))
+        (setq-local git-sync--last-output string)))))
+
+(defun git-sync--process-sentinel (process event)
+  "Sentinel function for git-sync."
+  (git-sync--sentinel-fn process event)
+  (when (memq (process-status process) '(exit signal))
+    (let ((resolve (process-get process 'git-sync-resolve))
+          (reject (process-get process 'git-sync-reject))
+          (ignore-error (process-get process 'git-sync-ignore-error)))
+      (if (or ignore-error
+              (zerop (process-exit-status process)))
+          (funcall resolve (string-trim git-sync--last-output))
+        (funcall reject (format "Command failed: %s" event))))))
+
 (defun git-sync--execute-command (command dir &optional ignore-error)
   "Execute `COMMAND' as a promise in the git-sync buffer.
 
@@ -82,32 +111,15 @@ If `IGNORE-ERROR' is non-nil, resolve even if the command fails.
 On success the promise returns the process-status for the command
 otherwise it rejects with the process event."
   (promise-new (lambda (resolve reject)
-                 (let ((default-directory dir)
-                       (last-output)
-                       (sentinel-fn (lambda (process event)
-                                      (git-sync--sentinel-fn process event)
-                                      (when (memq (process-status process) '(exit signal))
-                                        (if (or ignore-error
-                                                (zerop (process-exit-status process)))
-                                            (funcall resolve last-output)
-                                          (funcall reject (format "Command failed: %s" event))))))
-                       (filter-fn (lambda (process string)
-                                    (when (buffer-live-p (process-buffer process))
-                                      (with-current-buffer (process-buffer process)
-                                        (let ((moving (= (point) (process-mark process)))
-                                              (inhibit-read-only 't))
-                                          (save-excursion
-                                            ;; Insert the text, advancing the process marker.
-                                            (goto-char (process-mark process))
-                                            (insert string)
-                                            (set-marker (process-mark process) (point)))
-                                          (if moving (goto-char (process-mark process)))
-                                          (setq last-output string)))))))
-                   (make-process :name "git-sync"
-                                 :buffer (get-buffer-create (format "*git-sync:%s*" default-directory))
-                                 :filter filter-fn
-                                 :command command
-                                 :sentinel sentinel-fn)))))
+                 (let* ((default-directory dir)
+                        (process (make-process :name "git-sync"
+                                               :buffer (get-buffer-create (format "*git-sync:%s*" default-directory))
+                                               :filter #'git-sync--process-filter
+                                               :command command
+                                               :sentinel #'git-sync--process-sentinel)))
+                   (process-put process 'git-sync-resolve resolve)
+                   (process-put process 'git-sync-reject reject)
+                   (process-put process 'git-sync-ignore-error ignore-error)))))
 
 ;; Guard functions
 (async-defun git-sync--has-changes-p (dir)
