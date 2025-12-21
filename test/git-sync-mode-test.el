@@ -247,7 +247,6 @@ ARGS is a plist with keys :state (string) and :locked (boolean)."
                                      (should (string-match-p "push" (mapconcat #'identity (nth 6 commands) " "))))
                                    (funcall done))
                                  (lambda (err)
-                                   (message "Test promise rejected: %S" err)
                                    (funcall done (format "Promise rejected: %s" err)))))
 
 (ert-deftest-async git-sync-execute-rebases-when-diverged (done)
@@ -425,7 +424,6 @@ ARGS is a plist with keys :state (string) and :locked (boolean)."
                    (with-git-sync-test-repo '(:locked t)
                                             (promise-then (with-mock-execute (git-sync--validate-and-run))
                                                           (lambda (_)
-                                                            (message "Locked Test: Callback reached. Execute called: %S" git-sync-execute-called)
                                                             (should-not git-sync-execute-called)
                                                             (funcall done))
                                                           (lambda (err) (funcall done err)))))
@@ -435,7 +433,6 @@ ARGS is a plist with keys :state (string) and :locked (boolean)."
                    (with-git-sync-test-repo '(:state "MERGING")
                                             (promise-then (with-mock-execute (git-sync--validate-and-run))
                                                           (lambda (_)
-                                                            (message "Special Test: Callback reached. Execute called: %S" git-sync-execute-called)
                                                             (should-not git-sync-execute-called)
                                                             (funcall done))
                                                           (lambda (err) (funcall done err)))))
