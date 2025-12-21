@@ -48,6 +48,16 @@ git-sync-mode will be enabled."
   :type '(function)
   :group 'git-sync)
 
+(defcustom git-sync-add-new-files t
+  "If non-nil, git-sync will add new files to the repository."
+  :type 'boolean
+  :group 'git-sync)
+
+(defcustom git-sync-skip-verify nil
+  "If non-nil, git-sync will skip pre-commit and commit-msg hooks."
+  :type 'boolean
+  :group 'git-sync)
+
 (defun git-sync--commit-message ()
   (format "changes from %s on %s" (system-name) (current-time-string)))
 
@@ -115,20 +125,31 @@ otherwise it rejects with the process event."
          (lock-file (and root (expand-file-name ".git/index.lock" root))))
     (and lock-file (file-exists-p lock-file))))
 
-(async-defun git-sync--execute ()
-  (let ((dir default-directory)
-        (git-message (funcall git-sync-generate-message)))
-    (when (and (await (git-sync--has-changes-p dir))
-               (not (git-sync--is-locked-p dir)))
-      (condition-case err
-          (progn
-            (await (git-sync--execute-command '("git" "add" ".") dir t)) 'exit
-            (await (git-sync--execute-command `("git" "commit" "-m" ,git-message) dir))
-            (await (git-sync--execute-command '("git" "pull") dir))
-            (await (git-sync--execute-command '("git" "push") dir))
-            (message "git-sync complete"))
-        (error (message "git-sync failed: %s" err))))))
+;; Command generators
+(defun git-sync--add-command ()
+  "Return the git add command based on `git-sync-add-new-files'."
+  (if git-sync-add-new-files
+      '("git" "add" "--all" ".")
+    '("git" "add" "-u")))
 
+(defun git-sync--commit-command (message)
+  "Return the git commit command with `MESSAGE'."
+  (nconc (list "git"
+               "commit"
+               "-m"
+               (funcall git-sync-generate-message))
+         (when git-sync-skip-verify
+           "--no-verify")))
+
+(async-defun git-sync--execute (dir)
+  (condition-case err
+      (progn
+        (await (git-sync--execute-command (git-sync--add-command) dir)) 'exit
+        (await (git-sync--execute-command (git-sync--commit-command) dir))
+        (await (git-sync--execute-command '("git" "pull") dir))
+        (await (git-sync--execute-command '("git" "push") dir))
+        (message "git-sync complete"))
+    (error (message "git-sync failed: %s" err))))
 (defun git-sync--allowed-directory (current-file)
   "Return non-nil if CURRENT-FILE is in the allow list."
   (cl-reduce (lambda (any-p allowed-dir)
