@@ -72,7 +72,7 @@ git-sync-mode will be enabled."
           (unless (derived-mode-p 'special-mode)
             (special-mode)))))))
 
-(defun git-sync--execute-command (command &optional dir ignore-error)
+(defun git-sync--execute-command (command dir &optional ignore-error)
   "Execute `COMMAND' as a promise in the git-sync buffer.
 
 If `DIR' is provided, set `default-directory' to it for the command.
@@ -81,35 +81,35 @@ If `IGNORE-ERROR' is non-nil, resolve even if the command fails.
 
 On success the promise returns the process-status for the command
 otherwise it rejects with the process event."
-  (let ((dir (or dir default-directory)))
-    (promise-new (lambda (resolve reject)
-                   (let ((default-directory dir)
-                         (last-output)
-                         (sentinel-fn (lambda (process event)
-                                        (git-sync--sentinel-fn process event)
-                                        (when (memq (process-status process) '(exit signal))
-                                          (if (or ignore-error
-                                                  (zerop (process-exit-status process)))
-                                              (funcall resolve last-output)
-                                            (funcall reject (format "Command failed: %s" event))))))
-                         (filter-fn (lambda (process string)
-                                      (when (buffer-live-p (process-buffer process))
-                                        (with-current-buffer (process-buffer process)
-                                          (let ((moving (= (point) (process-mark process)))
-                                                (inhibit-read-only 't))
-                                            (save-excursion
-                                              ;; Insert the text, advancing the process marker.
-                                              (goto-char (process-mark process))
-                                              (insert string)
-                                              (set-marker (process-mark process) (point)))
-                                            (if moving (goto-char (process-mark process)))
-                                            (setq last-output string)))))))
-                     (make-process :name "git-sync"
-                                   :buffer (get-buffer-create (format "*git-sync:%s*" default-directory))
-                                   :filter filter-fn
-                                   :command command
-                                   :sentinel sentinel-fn))))))
+  (promise-new (lambda (resolve reject)
+                 (let ((default-directory dir)
+                       (last-output)
+                       (sentinel-fn (lambda (process event)
+                                      (git-sync--sentinel-fn process event)
+                                      (when (memq (process-status process) '(exit signal))
+                                        (if (or ignore-error
+                                                (zerop (process-exit-status process)))
+                                            (funcall resolve last-output)
+                                          (funcall reject (format "Command failed: %s" event))))))
+                       (filter-fn (lambda (process string)
+                                    (when (buffer-live-p (process-buffer process))
+                                      (with-current-buffer (process-buffer process)
+                                        (let ((moving (= (point) (process-mark process)))
+                                              (inhibit-read-only 't))
+                                          (save-excursion
+                                            ;; Insert the text, advancing the process marker.
+                                            (goto-char (process-mark process))
+                                            (insert string)
+                                            (set-marker (process-mark process) (point)))
+                                          (if moving (goto-char (process-mark process)))
+                                          (setq last-output string)))))))
+                   (make-process :name "git-sync"
+                                 :buffer (get-buffer-create (format "*git-sync:%s*" default-directory))
+                                 :filter filter-fn
+                                 :command command
+                                 :sentinel sentinel-fn)))))
 
+;; Guard functions
 (async-defun git-sync--has-changes-p (dir)
   "Return non-nil if there are staged changes in `DIR'."
   (or (length>
