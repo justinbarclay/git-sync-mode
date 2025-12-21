@@ -179,17 +179,18 @@ otherwise it rejects with the process event."
      ((not (await (git-sync--has-changes-p dir)))
       (message "git-sync: no changes to commit, skipping sync"))
      (t
-      (await (git-sync--execute))))))
+      (await (git-sync--execute dir))))))
 
 (async-defun git-sync--execute (dir)
   (condition-case err
       (progn
-        (await (git-sync--execute-command (git-sync--add-command) dir)) 'exit
+        (await (git-sync--execute-command (git-sync--add-command) dir))
         (await (git-sync--execute-command (git-sync--commit-command) dir))
         (await (git-sync--execute-command '("git" "pull") dir))
         (await (git-sync--execute-command '("git" "push") dir))
         (message "git-sync complete"))
     (error (message "git-sync failed: %s" err))))
+
 (defun git-sync--allowed-directory (current-file)
   "Return non-nil if CURRENT-FILE is in the allow list."
   (cl-reduce (lambda (any-p allowed-dir)
