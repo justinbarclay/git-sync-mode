@@ -1,6 +1,6 @@
-;;; git-sync-mode.el --- Automatically sync your git-repos  -*- lexical-binding: t; -*-
+;;; git-sync-mode.el --- Sync your git repositories on save  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2024  Justin Barclay
+;; Copyright (C) 2024-2025  Justin Barclay
 
 ;; Author: Justin Barclay <github@justincbarclay.ca>
 ;; Keywords: vc, convenience
