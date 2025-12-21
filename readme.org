@@ -1,39 +1,88 @@
 * Git Sync Mode
-Sync your work, automatically after save.
+
+`git-sync-mode` is a minor mode for Emacs that automatically syncs your git repositories after you save a file. It commits, fetches, and pushes your changes, keeping your local and remote repositories in sync.
+
+** Features
+
+- *Automatic Syncing*: Automatically syncs your work after every save.
+- *Conflict Handling*: Detects different states between your local and remote branches and handles them accordingly:
+    - **Ahead**: If your local branch is ahead of the remote, it pushes your changes.
+    - **Behind**: If your local branch is behind the remote, it fast-forwards your local branch.
+    - **Diverged**: If your local and remote branches have diverged, it rebases your changes on top of the remote branch and then pushes.
+- *Customizable Commit Messages*: You can customize the commit message format.
+- *Workspace Support*: You can specify which projects to enable `git-sync-mode` for.
+- *Safety*: It checks for locked repositories and special git states (like rebase, merge, etc.) to avoid conflicts.
+
+** Installation
+
+The recommended way to install `git-sync-mode` is from MELPA.
+
+#+begin_src elisp
+(use-package git-sync-mode
+  :ensure t
+  :config
+  (git-sync-global-mode)
+  (add-to-list 'git-sync-allow-list (expand-file-name "~/src/my-project")))
+#+end_src
 
 ** Usage
-*** Install
+
+*** Global Mode
+
+The easiest way to use `git-sync-mode` is to enable `git-sync-global-mode`. This will automatically enable `git-sync-mode` for any file in a directory that is in the `git-sync-allow-list`.
+
 #+begin_src elisp
-  (use-package git-sync-mode
-    :vc (:url "https://github.com/justinbarclay/git-sync-mode"))
+(git-sync-global-mode)
+(add-to-list 'git-sync-allow-list (expand-file-name "~/src/my-project"))
 #+end_src
-*** .dir-locals.el
-=git-sync-mode= can run automatically using [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Directory-Variables.html][dir-locals]], this gives you the benefit of controlling what file types it will run on.
+
+*** Per-project with `.dir-locals.el`
+
+You can also enable `git-sync-mode` on a per-project basis using `.dir-locals.el`. This is useful if you want to enable it for a specific project without adding it to your global allow list.
+
 #+begin_src elisp
 ;;; Directory Local Variables            -*- no-byte-compile: t -*-
 ;;; For more information see (info "(emacs) Directory Variables")
 
-((prog-mode . ((mode . git-sync)))
- (org-mode . ((mode . git-sync))))
+((nil . ((mode . git-sync))))
 #+end_src
-*** Global mode
-You can also use =git-sync-allow-list= to tell =git-sync-global-mode= which projects/directories git-sync should work in.
-#+begin_src elisp
-  (use-package git-sync-mode
-    :vc (:url "https://github.com/justinbarclay/git-sync-mode")
-    :config
-    (git-sync-global-mode)
-    (add-to-list git-sync-allow-list '("/path/to/project")))
-#+end_src
-*** Customization
-- =git-sync-generate-message=: The function called to generate the commit message. This function takes no argument but is run within the context of the current buffer.
 
-#+begin_src elisp
+** Customization
+
+- `git-sync-generate-message`: This function is called to generate the commit message. It takes no arguments and is run in the context of the current buffer.
+
+  #+begin_src elisp
   (defun my/commit-message ()
-    (format "changes from %s on %s" (system-name) (current-time-string)))
+    (format "WIP: changes from %s on %s" (system-name) (current-time-string)))
 
   (setq git-sync-generate-message #'my/commit-message)
-#+end_src
+  #+end_src
 
-- =git-sync-allow-list=: List of directories that =git-sync-mode= can run in. If any the directory is a parent of the current file git-sync-mode will be enabled.
+- `git-sync-allow-list`: This is a list of directories where `git-sync-mode` is allowed to run. If a file's path is a subdirectory of any of the directories in this list, `git-sync-mode` will be enabled.
 
+- `git-sync-add-new-files`: If non-nil, `git-sync-mode` will add new files to the repository.
+
+- `git-sync-skip-verify`: If non-nil, `git-sync-mode` will skip pre-commit and commit-msg hooks.
+
+** How it works
+
+`git-sync-mode` works by adding a hook to `after-save-hook`. When you save a file, the hook is triggered, and `git-sync-mode` performs the following actions:
+
+1.  **Checks for a locked repository**: If the repository is locked (i.e., a `.git/index.lock` file exists), it skips the sync.
+2.  **Checks for a special git state**: If the repository is in a special state (e.g., rebase, merge), it skips the sync.
+3.  **Adds changes**: It adds all changes to the staging area.
+4.  **Commits changes**: It commits the changes with a customizable commit message.
+5.  **Fetches from remote**: It fetches the latest changes from the remote repository.
+6.  **Determines sync state**: It determines the state of the local branch relative to the remote branch.
+7.  **Performs actions based on sync state**:
+    - If the local branch is ahead of the remote, it pushes the changes.
+    - If the local branch is behind the remote, it fast-forwards the local branch.
+    - If the local and remote branches have diverged, it rebases the local changes on top of the remote branch and then pushes.
+
+** Contributing
+
+Contributions are welcome! If you have any ideas, suggestions, or bug reports, please open an issue or submit a pull request on the [GitHub repository](https://github.com/justinbarclay/git-sync-mode).
+
+** License
+
+This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
