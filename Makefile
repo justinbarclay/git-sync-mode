@@ -1,11 +1,18 @@
 EMACS   ?= emacs
 EASK    ?= eask
 PACKAGE = git-sync-mode
+DEPS_FILE = .eask-deps
 
-.PHONY: all clean test install
+.PHONY: all clean test install install-dev coverage
 
-install:
+install: Eask
 	$(EASK) install --all
+
+$(DEPS_FILE): Eask
+	$(EASK) install-deps --dev
+	@touch $@
+
+install-dev: $(DEPS_FILE)
 
 all: install
 	$(EASK) exec $(EMACS) -Q --batch -f batch-byte-compile *.el
@@ -13,8 +20,13 @@ all: install
 clean:
 	rm -f *.elc
 
-test: all
-	$(EASK) test ert ./tests/**-tests.el
+test: install-dev
+	$(MAKE) clean
+	$(EASK) test ert-runner
+
+coverage: install-dev
+	$(MAKE) clean
+	UNDERCOVER_FORCE=true $(EASK) test ert-runner
 
 COVERAGE_DIR := .coverage
 

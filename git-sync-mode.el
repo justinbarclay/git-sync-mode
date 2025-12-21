@@ -235,24 +235,29 @@ The git sync process includes:
 (async-defun git-sync--validate-and-run ()
   "Validate the git repository state and run git-sync."
   (let* ((dir default-directory))
+    ;; We await here to ensure the async function completes before exiting.
     (cond
      ((git-sync--is-locked-p dir)
-      (message "git-sync: repository is locked, skipping sync"))
+      (message "git-sync: repository is locked, skipping sync")
+      (await (promise-resolve nil)))
      ((not (string= (git-sync--repo-state dir) "NORMAL"))
       (message "git-sync: repository is in a special state (%s), skipping sync"
-               (git-sync--repo-state dir)))
+               (git-sync--repo-state dir))
+      (await (promise-resolve nil)))
      (t
       (message "git-sync: starting...")
       (await (git-sync--execute dir))))))
 
 (defun git-sync--allowed-directory (current-file)
   "Return non-nil if CURRENT-FILE is in the allow list."
-  (cl-reduce (lambda (any-p allowed-dir)
-               (or any-p
-                   (not (minibufferp))
-                   (string-prefix-p allowed-dir current-file)))
-             git-sync-allow-list
-             :initial-value nil))
+  (and current-file
+       (not (minibufferp))
+       (cl-reduce (lambda (any-p allowed-dir)
+                    (or any-p
+                        (string-prefix-p (expand-file-name allowed-dir)
+                                         (expand-file-name current-file))))
+                  git-sync-allow-list
+                  :initial-value nil)))
 
 (defun git-sync--maybe ()
   "Call `git-sync--allowed-directory' to determine if git-sync is allowed to be enabled for this buffer."

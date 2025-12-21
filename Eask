@@ -14,8 +14,9 @@
 (depends-on "emacs" "30.1")
 (depends-on "async-await")
 
-(development
- (depends-on "undercover")
- (depends-on "ert-runner")
+ (development
+  (depends-on "ert-async")
+  (depends-on "undercover")
+  (depends-on "ert-runner")
 
- (load-paths "./tests/"))
+  (load-paths "./test/"))
