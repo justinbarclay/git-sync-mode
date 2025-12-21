@@ -1,0 +1,7 @@
+.eask/
+.eask-deps
+*.elc
+*-autoloads.el
+coverage.txt
+co1verage.txt
+.DS_Store
