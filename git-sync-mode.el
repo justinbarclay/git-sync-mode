@@ -87,20 +87,22 @@ git-sync-mode will be enabled."
           (goto-char (process-mark process))
           (insert string)
           (set-marker (process-mark process) (point)))
-        (if moving (goto-char (process-mark process)))
+        (when moving
+          (goto-char (process-mark process)))
         (setq-local git-sync--last-output string)))))
 
 (defun git-sync--process-sentinel (process event)
   "Sentinel function for git-sync."
   (git-sync--sentinel-fn process event)
-  (when (memq (process-status process) '(exit signal))
-    (let ((resolve (process-get process 'git-sync-resolve))
-          (reject (process-get process 'git-sync-reject))
-          (ignore-error (process-get process 'git-sync-ignore-error)))
-      (if (or ignore-error
-              (zerop (process-exit-status process)))
-          (funcall resolve (string-trim (or git-sync--last-output "")))
-        (funcall reject (format "Command failed: %s" event))))))
+  (with-current-buffer (process-buffer process)
+    (when (memq (process-status process) '(exit signal))
+      (let ((resolve (process-get process 'git-sync-resolve))
+            (reject (process-get process 'git-sync-reject))
+            (ignore-error (process-get process 'git-sync-ignore-error)))
+        (if (or ignore-error
+                (zerop (process-exit-status process)))
+            (funcall resolve (string-trim (or git-sync--last-output "")))
+          (funcall reject (format "Command failed: %s" event)))))))
 
 (defun git-sync--execute-command (command dir &optional ignore-error)
   "Execute `COMMAND' as a promise in the git-sync buffer.
@@ -121,13 +123,16 @@ otherwise it rejects with the process event."
                    (process-put process 'git-sync-resolve resolve)
                    (process-put process 'git-sync-reject reject)
                    (process-put process 'git-sync-ignore-error ignore-error)))))
+
 ;; State functions
 (async-defun git-sync--get-upstream-branch (dir)
   "Get the upstream branch for the current branch in `DIR`."
   (condition-case err
-      (string-trim (await (git-sync--execute-command '("git" "rev-parse" "--abbrev-ref" "@{u}") dir)))
+      (let ((response (await (git-sync--execute-command
+                              '("git" "rev-parse" "--abbrev-ref" "@{u}")
+                              dir))))
+        (string-trim response))
     (error (message "git-sync: No upstream branch found for current branch.\n%s" err))))
-
 
 (async-defun git-sync--get-sync-state (dir upstream)
   "Get the sync state between HEAD and `UPSTREAM` in `DIR`."
