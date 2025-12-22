@@ -113,6 +113,9 @@ If `IGNORE-ERROR' is non-nil, resolve even if the command fails.
 
 On success the promise returns the process-status for the command
 otherwise it rejects with the process event."
+  ;; Turn off pager
+  (make-local-variable 'process-environment)
+  (setq process-environment (cons "GIT_PAGER=cat" process-environment))
   (promise-new (lambda (resolve reject)
                  (let* ((default-directory dir)
                         (process (make-process :name "git-sync"
