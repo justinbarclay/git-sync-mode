@@ -62,6 +62,34 @@ git-sync-mode will be enabled."
 (defvar-local git-sync--last-output nil
   "Holds the last output from git-sync process.")
 
+(defvar-local git-sync-state nil
+  "Current state of git-sync.
+
+Possible values:
+- :starting        - Sync started
+- :committing      - Committing local changes
+- :fetching        - Fetching from remote
+- :fast-forwarding - Fast-forwarding local branch
+- :synced          - Sync complete
+- :failed          - Sync failed (check *git-sync:<dir>* buffer)
+- :locked          - Repository locked
+- :special-state   - Repository in special state (rebase/merge)")
+
+(defcustom git-sync-state-change-hook nil
+  "Hook run after `git-sync-state' changes."
+  :type 'hook
+  :group 'git-sync)
+
+(defun git-sync--set-state (new-state &optional buffer)
+  "Set `git-sync-state' to NEW-STATE and run `git-sync-state-change-hook'.
+If BUFFER is non-nil, set the state in that buffer."
+  (if (and buffer (buffer-live-p buffer))
+      (with-current-buffer buffer
+        (setq git-sync-state new-state)
+        (run-hooks 'git-sync-state-change-hook))
+    (setq git-sync-state new-state)
+    (run-hooks 'git-sync-state-change-hook)))
+
 (defun git-sync--commit-message ()
   (format "changes from %s on %s" (system-name) (current-time-string)))
 
@@ -129,13 +157,17 @@ otherwise it rejects with the process event."
 
 ;; State functions
 (async-defun git-sync--get-upstream-branch (dir)
-  "Get the upstream branch for the current branch in `DIR`."
-  (condition-case err
+  "Get the upstream branch for the current branch in `DIR`.
+
+If no upstream branch is found, return nil."
+  (condition-case _err
       (let ((response (await (git-sync--execute-command
                               '("git" "rev-parse" "--abbrev-ref" "@{u}")
                               dir))))
         (string-trim response))
-    (error (message "git-sync: No upstream branch found for current branch.\n%s" err))))
+    (error
+     (message "git-sync: No upstream branch found. Check *git-sync:%s* buffer." dir)
+     nil)))
 
 (async-defun git-sync--get-sync-state (dir upstream)
   "Get the sync state between HEAD and `UPSTREAM` in `DIR`."
@@ -213,14 +245,14 @@ The git sync process includes:
   (condition-case err
       (let (upstream)
         (when (await (git-sync--has-changes-p dir))
-          (message "git-sync: Committing local changes...")
+          (git-sync--set-state :committing)
           (await (git-sync--execute-command (git-sync--add-command) dir))
           (await (git-sync--execute-command (git-sync--commit-command) dir)))
 
         (setq upstream (await (git-sync--get-upstream-branch dir)))
 
         (when upstream
-          (message "git-sync: Fetching from remote...")
+          (git-sync--set-state :fetching)
           (await (git-sync--execute-command '("git" "fetch") dir))
 
           (let ((state (await (git-sync--get-sync-state dir upstream))))
@@ -231,7 +263,7 @@ The git sync process includes:
                (await (git-sync--execute-command '("git" "push") dir)))
 
               (:behind
-               (message "git-sync: Behind remote. Fast-forwarding...")
+               (git-sync--set-state :fast-forwarding)
                ;; Safe guard with --ff-only to avoid unwanted merges.
                ;;
                ;; If the state was misidentified and the branches had
@@ -242,8 +274,10 @@ The git sync process includes:
               (:diverged
                (await (git-sync--execute-command '("git" "rebase" "@{u}") dir))
                (await (git-sync--execute-command '("git" "push") dir))))
-            (message "git-sync: Sync complete."))))
-    (error (message "git-sync failed: %s" (cadr err)))))
+            (git-sync--set-state :synced))))
+    (error
+     (message "git-sync failed. Check *git-sync:%s* buffer." dir)
+     (git-sync--set-state :failed))))
 
 (async-defun git-sync--validate-and-run ()
   "Validate the git repository state and run git-sync."
@@ -251,14 +285,13 @@ The git sync process includes:
     ;; We await here to ensure the async function completes before exiting.
     (cond
      ((git-sync--is-locked-p dir)
-      (message "git-sync: repository is locked, skipping sync")
+      (git-sync--set-state :locked)
       (await (promise-resolve nil)))
      ((not (string= (git-sync--repo-state dir) "NORMAL"))
-      (message "git-sync: repository is in a special state (%s), skipping sync"
-               (git-sync--repo-state dir))
+      (git-sync--set-state :special-state)
       (await (promise-resolve nil)))
      (t
-      (message "git-sync: starting...")
+      (git-sync--set-state :starting)
       (await (git-sync--execute dir))))))
 
 (defun git-sync--allowed-directory (current-file)
