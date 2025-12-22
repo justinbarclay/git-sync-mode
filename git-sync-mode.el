@@ -75,20 +75,65 @@ Possible values:
 - :locked          - Repository locked
 - :special-state   - Repository in special state (rebase/merge)")
 
+(defvar-local git-sync-modeline-string " git-sync"
+  "String to display in the mode line.")
+
 (defcustom git-sync-state-change-hook nil
   "Hook run after `git-sync-state' changes."
   :type 'hook
   :group 'git-sync)
 
+(defun git-sync--nerd-icons-icon (state)
+  "Return nerd-icon for STATE."
+  (pcase state
+    (:synced (nerd-icons-octicon "nf-oct-check" :face 'success :height 0.8))
+    (:failed (nerd-icons-octicon "nf-oct-alert" :face 'error :height 0.8))
+    (:locked (nerd-icons-octicon "nf-oct-lock" :face 'warning :height 0.8))
+    (:special-state (nerd-icons-octicon "nf-oct-git_merge" :face 'warning :height 0.8))
+    ((or :starting :committing :fetching :fast-forwarding)
+     (nerd-icons-faicon "nf-fa-down_left_and_up_right_to_center" :face 'nerd-icons-lyellow :height 0.8))
+    (_ "")))
+
+(defun git-sync--all-the-icons-icon (state)
+  "Return all-the-icons icon for STATE."
+  (pcase state
+    (:synced (all-the-icons-octicon "check" :face 'success))
+    (:failed (all-the-icons-octicon "alert" :face 'error))
+    (:locked (all-the-icons-octicon "lock" :face 'warning))
+    (:special-state (all-the-icons-octicon "git-merge" :face 'warning))
+    ((or :starting :committing :fetching :fast-forwarding)
+     (all-the-icons-octicon "sync" :face 'all-the-icons-lyellow))
+    (_)))
+
+(defun git-sync--state-icon (state)
+  "Return an icon for STATE if available."
+  (cond
+   ((and (featurep 'nerd-icons) (fboundp 'nerd-icons-octicon))
+    (git-sync--nerd-icons-icon state))
+   ((and (featurep 'all-the-icons) (fboundp 'all-the-icons-octicon))
+    (git-sync--all-the-icons-icon state))
+   (t nil)))
+(put 'git-sync-modeline-string 'risky-local-variable t)
+(defun git-sync--update-mode-line (state)
+  "Update `git-sync-modeline-string` for STATE and refresh mode line."
+  (let ((icon (git-sync--state-icon state)))
+    (setq git-sync-modeline-string
+          (if icon
+              (list " git-sync:"icon"")
+            (if (or (null state) (eq state :synced))
+                " git-sync"
+              (format " git-sync[%s]" (substring (symbol-name state) 1)))))
+    (force-mode-line-update)))
+
 (defun git-sync--set-state (new-state &optional buffer)
   "Set `git-sync-state' to NEW-STATE and run `git-sync-state-change-hook'.
 If BUFFER is non-nil, set the state in that buffer."
-  (if (and buffer (buffer-live-p buffer))
-      (with-current-buffer buffer
+  (let ((buf (or buffer (current-buffer))))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
         (setq git-sync-state new-state)
-        (run-hooks 'git-sync-state-change-hook))
-    (setq git-sync-state new-state)
-    (run-hooks 'git-sync-state-change-hook)))
+        (git-sync--update-mode-line new-state)
+        (run-hooks 'git-sync-state-change-hook)))))
 
 (defun git-sync--commit-message ()
   (format "changes from %s on %s" (system-name) (current-time-string)))
@@ -317,7 +362,7 @@ The git sync process includes:
 ;;;###autoload
 (define-minor-mode git-sync-mode
   "Commit, save and push your changes on-save."
-  :lighter " git-sync"
+  :lighter git-sync-modeline-string
   :group 'git-sync
   (cond
    (git-sync-mode
