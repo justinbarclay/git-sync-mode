@@ -1,44 +1,40 @@
 * Git Sync Mode
 
-`git-sync-mode` is a minor mode for Emacs that automatically syncs your git repositories after you save a file. It commits, fetches, and pushes your changes, keeping your local and remote repositories in sync.
+~git-sync-mode~ is a minor mode for Emacs that automatically syncs your git repositories after you save a file. It commits, fetches, and pushes your changes, keeping local and remote repositories in sync.
 
-** Features
-
-- *Automatic Syncing*: Automatically syncs your work after every save.
-- *Conflict Handling*: Detects different states between your local and remote branches and handles them accordingly:
-    - **Ahead**: If your local branch is ahead of the remote, it pushes your changes.
-    - **Behind**: If your local branch is behind the remote, it fast-forwards your local branch.
-    - **Diverged**: If your local and remote branches have diverged, it rebases your changes on top of the remote branch and then pushes.
-- *Customizable Commit Messages*: You can customize the commit message format.
-- *Workspace Support*: You can specify which projects to enable `git-sync-mode` for.
-- *Safety*: It checks for locked repositories and special git states (like rebase, merge, etc.) to avoid conflicts.
+#+begin_quote
+~git-sync-mode~ is inspired from [[https://github.com/simonthum/git-sync][git-sync]], it brings the set-it-and-forget-it peace of mind directly into your Emacs workflow.
+#+end_quote
 
 ** Installation
-
-The recommended way to install `git-sync-mode` is from MELPA.
-
 #+begin_src elisp
 (use-package git-sync-mode
-  :ensure t
+  :vc (:url "https://github.com/justinbarclay/git-sync-mode" :rev :newest)
   :config
   (git-sync-global-mode)
   (add-to-list 'git-sync-allow-list (expand-file-name "~/src/my-project")))
 #+end_src
 
+** Features
+
+- *Automatic Syncing*: Automatically syncs your work after every save.
+- *Customizable Commit Messages*: You can customize the commit message format.
+- *Workspace Support*: You can specify which projects to enable ~git-sync-mode~ for.
+
 ** Usage
 
 *** Global Mode
 
-The easiest way to use `git-sync-mode` is to enable `git-sync-global-mode`. This will automatically enable `git-sync-mode` for any file in a directory that is in the `git-sync-allow-list`.
+The easiest way to use ~git-sync-mode~ is to enable ~git-sync-global-mode~. This will automatically enable ~git-sync-mode~ for any file in a directory that is in the ~git-sync-allow-list~.
 
 #+begin_src elisp
 (git-sync-global-mode)
 (add-to-list 'git-sync-allow-list (expand-file-name "~/src/my-project"))
 #+end_src
 
-*** Per-project with `.dir-locals.el`
+*** Per-project with ~.dir-locals.el~
 
-You can also enable `git-sync-mode` on a per-project basis using `.dir-locals.el`. This is useful if you want to enable it for a specific project without adding it to your global allow list.
+You can also enable ~git-sync-mode~ on a per-project basis using ~.dir-locals.el~. This is useful if you want to enable it for a specific project without adding it to your global allow list.
 
 #+begin_src elisp
 ;;; Directory Local Variables            -*- no-byte-compile: t -*-
@@ -49,7 +45,7 @@ You can also enable `git-sync-mode` on a per-project basis using `.dir-locals.el
 
 ** Customization
 
-- `git-sync-generate-message`: This function is called to generate the commit message. It takes no arguments and is run in the context of the current buffer.
+- ~git-sync-generate-message~: A function that is called to generate the commit message. It takes no arguments and is run in the context of the current buffer.
 
   #+begin_src elisp
   (defun my/commit-message ()
@@ -58,30 +54,54 @@ You can also enable `git-sync-mode` on a per-project basis using `.dir-locals.el
   (setq git-sync-generate-message #'my/commit-message)
   #+end_src
 
-- `git-sync-allow-list`: This is a list of directories where `git-sync-mode` is allowed to run. If a file's path is a subdirectory of any of the directories in this list, `git-sync-mode` will be enabled.
+- ~git-sync-allow-list~: A list of directories where ~git-sync-mode~ is allowed to run. If a file's path is a subdirectory of any of the directories in this list, ~git-sync-mode~ will be enabled.
 
-- `git-sync-add-new-files`: If non-nil, `git-sync-mode` will add new files to the repository.
+- ~git-sync-add-new-files~: If non-nil, ~git-sync-mode~ will add new files to the repository.
 
-- `git-sync-skip-verify`: If non-nil, `git-sync-mode` will skip pre-commit and commit-msg hooks.
+- ~git-sync-skip-verify~: If non-nil, ~git-sync-mode~ will skip pre-commit and commit-msg hooks.
 
 ** How it works
 
-`git-sync-mode` works by adding a hook to `after-save-hook`. When you save a file, the hook is triggered, and `git-sync-mode` performs the following actions:
+~git-sync-mode~ works by adding a hook to ~after-save-hook~. When you save a file, the hook is triggered, and ~git-sync-mode~ follows this flow:
 
-1.  **Checks for a locked repository**: If the repository is locked (i.e., a `.git/index.lock` file exists), it skips the sync.
-2.  **Checks for a special git state**: If the repository is in a special state (e.g., rebase, merge), it skips the sync.
-3.  **Adds changes**: It adds all changes to the staging area.
-4.  **Commits changes**: It commits the changes with a customizable commit message.
-5.  **Fetches from remote**: It fetches the latest changes from the remote repository.
-6.  **Determines sync state**: It determines the state of the local branch relative to the remote branch.
-7.  **Performs actions based on sync state**:
-    - If the local branch is ahead of the remote, it pushes the changes.
-    - If the local branch is behind the remote, it fast-forwards the local branch.
-    - If the local and remote branches have diverged, it rebases the local changes on top of the remote branch and then pushes.
+#+begin_src dot :file git-sync-flow.png :cmdline -Tpng :exports results
+digraph git_sync_flow {
+    node [shape=box, style=filled, fillcolor="#eeeeee"];
+    edge [fontsize=10];
+
+    Save [label="Save File", shape=ellipse, style=filled, fillcolor="#d0f0c0"];
+    Locked [label="Repo Locked?", shape=diamond, style=filled, fillcolor="#fffacd"];
+    SpecialState [label="Special State?", shape=diamond, style=filled, fillcolor="#fffacd"];
+    Skip [label="Skip Sync", shape=ellipse, style=filled, fillcolor="#ffcccb"];
+    Add [label="Add Changes"];
+    Commit [label="Commit Changes"];
+    Fetch [label="Fetch Remote"];
+    State [label="Sync State?", shape=diamond, style=filled, fillcolor="#fffacd"];
+    Push [label="Push", shape=ellipse, style=filled, fillcolor="#add8e6"];
+    Pull [label="Fast-forward", shape=ellipse, style=filled, fillcolor="#add8e6"];
+    Rebase [label="Rebase"];
+
+    Save -> Locked;
+    Locked -> Skip [label="Yes"];
+    Locked -> SpecialState [label="No"];
+    SpecialState -> Skip [label="Yes"];
+    SpecialState -> Add [label="No"];
+    Add -> Commit;
+    Commit -> Fetch;
+    Fetch -> State;
+    State -> Push [label="Ahead"];
+    State -> Pull [label="Behind"];
+    State -> Rebase [label="Diverged"];
+    Rebase -> Push;
+}
+#+end_src
+
+#+RESULTS:
+[[file:git-sync-flow.png]]
 
 ** Contributing
 
-Contributions are welcome! If you have any ideas, suggestions, or bug reports, please open an issue or submit a pull request on the [GitHub repository](https://github.com/justinbarclay/git-sync-mode).
+Contributions are welcome! If you have any ideas, suggestions, or bug reports, please open an [[https://github.com/justinbarclay/git-sync-mode/issues/new][issue]] or submit a [[https://github.com/justinbarclay/git-sync-mode/pulls][pull request]].
 
 ** License
 
