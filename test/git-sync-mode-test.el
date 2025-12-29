@@ -98,177 +98,219 @@ ARGS is a plist with keys :state (string) and :locked (boolean)."
        (delete-directory tmpdir t))))
 
 ;;;---------------------------------------------------------------------
+;;; Test Command Variables
+;;;---------------------------------------------------------------------
+(defvar git-sync-test-cmd-rev-list "rev-list --count --left-right"
+  "Command for `git rev-list --count --left-right`.")
+
+(defvar git-sync-test-cmd-rev-parse-upstream "rev-parse --abbrev-ref @{u}"
+  "Command for `git rev-parse --abbrev-ref @{u}`.")
+
+(defvar git-sync-test-cmd-status-porcelain "status --porcelain"
+  "Command for `git status --porcelain`.")
+
+(defvar git-sync-test-cmd-fetch "fetch"
+  "Command for `git fetch`.")
+
+(defvar git-sync-test-cmd-add "add --all"
+  "Command for `git add --all`.")
+
+(defvar git-sync-test-cmd-commit "commit -m"
+  "Command for `git commit -m`.")
+
+(defvar git-sync-test-cmd-push "push"
+  "Command for `git push`.")
+
+(defvar git-sync-test-cmd-rebase "rebase"
+  "Command for `git rebase`.")
+
+(defvar git-sync-test-cmd-unmatched "unmatched-command"
+  "A command pattern that is not expected to match anything in the tests.")
+
+
+;;;---------------------------------------------------------------------
 ;;; Tests for git-sync--get-sync-state
 ;;;---------------------------------------------------------------------
 
 (ert-deftest-async git-sync-get-sync-state-equal (done)
-                   "Test :equal state from git-sync--get-sync-state."
-                   (promise-then (with-mock-git-sync-commands
-                                  '(("rev-list --count --left-right" . "0	0"))
-                                  (git-sync--get-sync-state "/path/to/repo" "origin/main"))
-                                 (lambda (state)
-                                   (should (eq state :equal))
-                                   (funcall done))
-                                 (lambda (err)
-                                   (funcall done (format "Promise rejected: %s" err)))))
+  "Test :equal state from git-sync--get-sync-state."
+  (promise-then (with-mock-git-sync-commands
+                 `((,git-sync-test-cmd-rev-list . "0	0"))
+                 (git-sync--get-sync-state "/path/to/repo" "origin/main"))
+                (lambda (state)
+                  (should (eq state :equal))
+                  (funcall done))
+                (lambda (err)
+                  (funcall done (format "Promise rejected: %s" err)))))
 
 (ert-deftest-async git-sync-get-sync-state-ahead (done)
-                   "Test :ahead state from git-sync--get-sync-state."
-                   (promise-then (with-mock-git-sync-commands
-                                  '(("rev-list --count --left-right" . "0	5"))
-                                  (git-sync--get-sync-state "/path/to/repo" "origin/main"))
-                                 (lambda (state)
-                                   (should (eq state :ahead))
-                                   (funcall done))
-                                 (lambda (err)
-                                   (funcall done (format "Promise rejected: %s" err)))))
+  "Test :ahead state from git-sync--get-sync-state."
+  (promise-then (with-mock-git-sync-commands
+                 `((,git-sync-test-cmd-rev-list . "0	5"))
+                 (git-sync--get-sync-state "/path/to/repo" "origin/main"))
+                (lambda (state)
+                  (should (eq state :ahead))
+                  (funcall done))
+                (lambda (err)
+                  (funcall done (format "Promise rejected: %s" err)))))
 
 (ert-deftest-async git-sync-get-sync-state-behind (done)
-                   "Test :behind state from git-sync--get-sync-state."
-                   (promise-then (with-mock-git-sync-commands
-                                  '(("rev-list --count --left-right" . "3	0"))
-                                  (git-sync--get-sync-state "/path/to/repo" "origin/main"))
-                                 (lambda (state)
-                                   (should (eq state :behind))
-                                   (funcall done))
-                                 (lambda (err)
-                                   (funcall done (format "Promise rejected: %s" err)))))
+  "Test :behind state from git-sync--get-sync-state."
+  (promise-then (with-mock-git-sync-commands
+                 `((,git-sync-test-cmd-rev-list . "3	0"))
+                 (git-sync--get-sync-state "/path/to/repo" "origin/main"))
+                (lambda (state)
+                  (should (eq state :behind))
+                  (funcall done))
+                (lambda (err)
+                  (funcall done (format "Promise rejected: %s" err)))))
 
 (ert-deftest-async git-sync-get-sync-state-diverged (done)
-                   "Test :diverged state from git-sync--get-sync-state."
-                   (promise-then (with-mock-git-sync-commands
-                                  '(("rev-list --count --left-right" . "3	5"))
-                                  (git-sync--get-sync-state "/path/to/repo" "origin/main"))
-                                 (lambda (state)
-                                   (should (eq state :diverged))
-                                   (funcall done))
-                                 (lambda (err)
-                                   (funcall done (format "Promise rejected: %s" err)))))
+  "Test :diverged state from git-sync--get-sync-state."
+  (promise-then (with-mock-git-sync-commands
+                 `((,git-sync-test-cmd-rev-list . "3	5"))
+                 (git-sync--get-sync-state "/path/to/repo" "origin/main"))
+                (lambda (state)
+                  (should (eq state :diverged))
+                  (funcall done))
+                (lambda (err)
+                  (funcall done (format "Promise rejected: %s" err)))))
 
 (ert-deftest-async git-sync-get-sync-state-error (done)
-                   "Test error handling in git-sync--get-sync-state."
-                   (promise-then (with-mock-git-sync-commands
-                                  '(("this-will-not-match" . "foo"))
-                                  (git-sync--get-sync-state "/path/to/repo" "origin/main"))
-                                 (lambda (value)
-                                   (funcall done "Promise resolved unexpectedly")) ; Fail test if it resolves
-                                 (lambda (err)
-                                   (should (and (listp err)
-                                                (eq (car err) 'error)
-                                                (string-match-p "No mock response" (cadr err))))
-                                   (funcall done))))
+  "Test error handling in git-sync--get-sync-state."
+  (promise-then (with-mock-git-sync-commands
+                 `((,git-sync-test-cmd-unmatched . "foo"))
+                 (git-sync--get-sync-state "/path/to/repo" "origin/main"))
+                (lambda (value)
+                  (funcall done "Promise resolved unexpectedly")) ; Fail test if it resolves
+                (lambda (err)
+                  (should (and (listp err)
+                               (eq (car err) 'error)
+                               (string-match-p "No mock response" (cadr err))))
+                  (funcall done))))
 
-;; ;;;---------------------------------------------------------------------
-;; ;;; Tests for git-sync--has-changes-p
-;; ;;;---------------------------------------------------------------------
+;;;---------------------------------------------------------------------
+;;; Tests for git-sync--get-upstream-branch
+;;;---------------------------------------------------------------------
+(ert-deftest-async git-sync-get-upstream-branch-success (done)
+  "Test successful retrieval of upstream branch."
+  (promise-then (with-mock-git-sync-commands
+                 `((,git-sync-test-cmd-rev-parse-upstream . "origin/main\n"))
+                 (git-sync--get-upstream-branch "/path/to/repo"))
+                (lambda (upstream)
+                  (should (string= upstream "origin/main"))
+                  (funcall done))
+                (lambda (err)
+                  (funcall done (format "Promise rejected: %s" err)))))
+
+(ert-deftest-async git-sync-get-upstream-branch-failure (done)
+  "Test failure to retrieve upstream branch."
+  (promise-then (with-mock-git-sync-commands
+                 `((,git-sync-test-cmd-unmatched . "foo")) ; No match for rev-parse
+                 (git-sync--get-upstream-branch "/path/to/repo"))
+                (lambda (upstream)
+                  (should (null upstream))
+                  (funcall done))
+                (lambda (err)
+                  (funcall done (format "Promise was rejected: %s" err)))))
+
+;;;---------------------------------------------------------------------
+;;; Tests for git-sync--has-changes-p
+;;;---------------------------------------------------------------------
 
 (ert-deftest-async git-sync-has-changes-p-no-changes (done)
-                   "Test git-sync--has-changes-p with no changes."
-                   (promise-then (with-mock-git-sync-commands
-                                  '(("diff --cached --name-only" . "")
-                                    ("diff --name-only" . ""))
-                                  (git-sync--has-changes-p "/path/to/repo"))
-                                 (lambda (has-changes)
-                                   (should (not has-changes))
-                                   (funcall done))
-                                 (lambda (err)
-                                   (funcall done (format "Promise rejected: %s" err)))))
+  "Test git-sync--has-changes-p with no changes."
+  (promise-then (with-mock-git-sync-commands
+                 `((,git-sync-test-cmd-status-porcelain . ""))
+                 (git-sync--has-changes-p "/path/to/repo"))
+                (lambda (has-changes)
+                  (should (not has-changes))
+                  (funcall done))
+                (lambda (err)
+                  (funcall done (format "Promise rejected: %s" err)))))
 
-(ert-deftest-async git-sync-has-changes-p-with-staged-changes (done)
-                   "Test git-sync--has-changes-p with staged changes."
-                   (promise-then (with-mock-git-sync-commands
-                                  '(("diff --cached --name-only" . "file.txt")
-                                    ("diff --name-only" . ""))
-                                  (git-sync--has-changes-p "/path/to/repo"))
-                                 (lambda (has-changes)
-                                   (should has-changes)
-                                   (funcall done))
-                                 (lambda (err)
-                                   (funcall done (format "Promise rejected: %s" err)))))
+(ert-deftest-async git-sync-has-changes-p-with-changes (done)
+  "Test git-sync--has-changes-p with changes."
+  (promise-then (with-mock-git-sync-commands
+                 `((,git-sync-test-cmd-status-porcelain . " M file.txt"))
+                 (git-sync--has-changes-p "/path/to/repo"))
+                (lambda (has-changes)
+                  (should has-changes)
+                  (funcall done))
+                (lambda (err)
+                  (funcall done (format "Promise rejected: %s" err)))))
 
-(ert-deftest-async git-sync-has-changes-p-with-unstaged-changes (done)
-                   "Test git-sync--has-unstaged-changes-p with unstaged changes."
-                   (promise-then (with-mock-git-sync-commands
-                                  '(("diff --name-only" . "file.txt")
-                                    ("diff --cached --name-only" . ""))
-                                  (git-sync--has-changes-p "/path/to/repo"))
-                                 (lambda (has-changes)
-                                   (should has-changes)
-                                   (funcall done))
-                                 (lambda (err)
-                                   (funcall done (format "Promise rejected: %s" err)))))
-
-
-;; ;;;---------------------------------------------------------------------
-;; ;;; Tests for git-sync--execute (Integration-style)
-;; ;;;---------------------------------------------------------------------
+;;;---------------------------------------------------------------------
+;;; Tests for git-sync--execute (Integration-style)
+;;;---------------------------------------------------------------------
 
 (ert-deftest-async git-sync-execute-does-nothing-when-equal-and-no-changes (done)
-                   "Test that git-sync--execute does nothing when repo is clean and equal."
-                   (let ((tmpdir (make-temp-file "git-sync-test" t)))
-                     (cl-letf (((symbol-function 'locate-dominating-file) (lambda (dir file) tmpdir)))
-                       (promise-then (with-mock-git-sync-commands
-                                      '(("diff --cached --name-only" . "")
-                                        ("diff --name-only" . "")
-                                        ("rev-parse --abbrev-ref" . "origin/main")
-                                        ("rev-list --count --left-right" . "0	0")
-                                        ("fetch" . "ok"))
-                                      (git-sync--execute tmpdir))
-                                     (lambda (val)
-                                       (let ((commands (reverse git-sync-mock-executed-commands)))
-                                         ;; Should check for changes, then check upstream, then fetch, then check state.
-                                         (should (string-match-p "diff" (mapconcat #'identity (nth 0 commands) " ")))
-                                         (should (string-match-p "diff" (mapconcat #'identity (nth 1 commands) " ")))
-                                         (should (string-match-p "rev-parse" (mapconcat #'identity (nth 2 commands) " ")))
-                                         (should (string-match-p "fetch" (mapconcat #'identity (nth 3 commands) " ")))
-                                         (should (string-match-p "rev-list" (mapconcat #'identity (nth 4 commands) " "))))
-                                       (funcall done))
-                                     (lambda (err)
-                                       (funcall done (format "Promise rejected: %s" err)))))))
+  "Test that git-sync--execute does nothing when repo is clean and equal."
+  (promise-then (with-mock-git-sync-commands
+                 `((,git-sync-test-cmd-status-porcelain . "")
+                   (,git-sync-test-cmd-rev-parse-upstream . "origin/main")
+                   (,git-sync-test-cmd-fetch . "ok")
+                   (,git-sync-test-cmd-rev-list . "0	0"))
+                 (git-sync--execute "/path/to/repo"))
+                (lambda (val)
+                  (let ((commands (reverse git-sync-mock-executed-commands)))
+                    (should (= (length commands) 4))
+                    (should (string-match-p "status --porcelain" (mapconcat #'identity (nth 0 commands) " ")))
+                    (should (string-match-p "rev-parse --abbrev-ref @{u}" (mapconcat #'identity (nth 1 commands) " ")))
+                    (should (string-match-p "fetch" (mapconcat #'identity (nth 2 commands) " ")))
+                    (should (string-match-p "rev-list" (mapconcat #'identity (nth 3 commands) " "))))
+                  (funcall done))
+                (lambda (err)
+                  (funcall done (format "Promise rejected: %s" err)))))
+
 
 (ert-deftest-async git-sync-execute-commits-and-pushes-when-ahead (done)
-                   "Test that git-sync--execute commits and pushes when ahead."
-                   (promise-then (with-mock-git-sync-commands
-                                  '(("add --all" . "ok")
-                                    ("commit -m" . "ok")
-                                    ("fetch" . "ok")
-                                    ("push" . "ok")
-                                    ("rev-list --count --left-right" . "0	5")
-                                    ("rev-parse --abbrev-ref" . "origin/main")
-                                    ("diff --cached --name-only" . "file.txt")
-                                    ("diff --name-only" . ""))
-                                  (git-sync--execute "/path/to/repo"))
-                                 (lambda (val)
-                                   (let ((commands (reverse git-sync-mock-executed-commands)))
-                                     (should (= (length commands) 7))
-                                     (should (string-match-p "add" (mapconcat #'identity (nth 1 commands) " ")))
-                                     (should (string-match-p "commit" (mapconcat #'identity (nth 2 commands) " ")))
-                                     (should (string-match-p "fetch" (mapconcat #'identity (nth 4 commands) " ")))
-                                     (should (string-match-p "push" (mapconcat #'identity (nth 6 commands) " "))))
-                                   (funcall done))
-                                 (lambda (err)
-                                   (funcall done (format "Promise rejected: %s" err)))))
+  "Test that git-sync--execute commits and pushes when ahead."
+  (promise-then (with-mock-git-sync-commands
+                 `((,git-sync-test-cmd-status-porcelain . " M file.txt")
+                   (,git-sync-test-cmd-add . "ok")
+                   (,git-sync-test-cmd-commit . "ok")
+                   (,git-sync-test-cmd-rev-parse-upstream . "origin/main")
+                   (,git-sync-test-cmd-fetch . "ok")
+                   (,git-sync-test-cmd-rev-list . "0	5")
+                   (,git-sync-test-cmd-push . "ok"))
+                 (git-sync--execute "/path/to/repo"))
+                (lambda (val)
+                  (let ((commands (reverse git-sync-mock-executed-commands)))
+                    (should (= (length commands) 7))
+                    (should (string-match-p "status --porcelain" (mapconcat #'identity (nth 0 commands) " ")))
+                    (should (string-match-p "add --all" (mapconcat #'identity (nth 1 commands) " ")))
+                    (should (string-match-p "commit -m" (mapconcat #'identity (nth 2 commands) " ")))
+                    (should (string-match-p "rev-parse --abbrev-ref @{u}" (mapconcat #'identity (nth 3 commands) " ")))
+                    (should (string-match-p "fetch" (mapconcat #'identity (nth 4 commands) " ")))
+                    (should (string-match-p "rev-list" (mapconcat #'identity (nth 5 commands) " ")))
+                    (should (string-match-p "push" (mapconcat #'identity (nth 6 commands) " "))))
+                  (funcall done))
+                (lambda (err)
+                  (funcall done (format "Promise rejected: %s" err)))))
 
 (ert-deftest-async git-sync-execute-rebases-when-diverged (done)
-                   "Test that git-sync--execute rebases and pushes when diverged."
-                   (promise-then (with-mock-git-sync-commands
-                                  '(("diff --cached --name-only" . "")
-                                    ("diff --name-only" . "")
-                                    ("rev-parse --abbrev-ref" . "origin/main")
-                                    ("fetch" . "ok")
-                                    ("rev-list --count --left-right" . "3	5")
-                                    ("rebase" . "ok")
-                                    ("push" . "ok"))
-                                  (git-sync--execute "/path/to/repo"))
-                                 (lambda (val)
-                                   (let ((commands (reverse git-sync-mock-executed-commands)))
-                                     (should (= (length commands) 7))
-                                     (should (string-match-p "fetch" (mapconcat #'identity (nth 3 commands) " ")))
-                                     (should (string-match-p "rebase" (mapconcat #'identity (nth 5 commands) " ")))
-                                     (should (string-match-p "push" (mapconcat #'identity (nth 6 commands) " "))))
-                                   (funcall done))
-                                 (lambda (err)
-                                   (funcall done (format "Promise rejected: %s" err)))))
+  "Test that git-sync--execute rebases and pushes when diverged."
+  (promise-then (with-mock-git-sync-commands
+                 `((,git-sync-test-cmd-status-porcelain . "")
+                   (,git-sync-test-cmd-rev-parse-upstream . "origin/main")
+                   (,git-sync-test-cmd-fetch . "ok")
+                   (,git-sync-test-cmd-rev-list . "3	5")
+                   (,git-sync-test-cmd-rebase . "ok")
+                   (,git-sync-test-cmd-push . "ok"))
+                 (git-sync--execute "/path/to/repo"))
+                (lambda (val)
+                  (let ((commands (reverse git-sync-mock-executed-commands)))
+                    (should (= (length commands) 6))
+                    (should (string-match-p "status --porcelain" (mapconcat #'identity (nth 0 commands) " ")))
+                    (should (string-match-p "rev-parse --abbrev-ref @{u}" (mapconcat #'identity (nth 1 commands) " ")))
+                    (should (string-match-p "fetch" (mapconcat #'identity (nth 2 commands) " ")))
+                    (should (string-match-p "rev-list" (mapconcat #'identity (nth 3 commands) " ")))
+                    (should (string-match-p "rebase" (mapconcat #'identity (nth 4 commands) " ")))
+                    (should (string-match-p "push" (mapconcat #'identity (nth 5 commands) " "))))
+                  (funcall done))
+                (lambda (err)
+                  (funcall done (format "Promise rejected: %s" err)))))
 
 ;;;---------------------------------------------------------------------
 ;;; Tests for git-sync--allowed-directory
@@ -420,31 +462,31 @@ ARGS is a plist with keys :state (string) and :locked (boolean)."
 ;;;---------------------------------------------------------------------
 
 (ert-deftest-async git-sync-validate-and-run-locked (done)
-                   "Test skip when locked."
-                   (with-git-sync-test-repo '(:locked t)
-                                            (promise-then (with-mock-execute (git-sync--validate-and-run))
-                                                          (lambda (_)
-                                                            (should-not git-sync-execute-called)
-                                                            (funcall done))
-                                                          (lambda (err) (funcall done err)))))
+  "Test skip when locked."
+  (with-git-sync-test-repo '(:locked t)
+                           (promise-then (with-mock-execute (git-sync--validate-and-run))
+                                         (lambda (_)
+                                           (should-not git-sync-execute-called)
+                                           (funcall done))
+                                         (lambda (err) (funcall done err)))))
 
 (ert-deftest-async git-sync-validate-and-run-special (done)
-                   "Test skip when special state."
-                   (with-git-sync-test-repo '(:state "MERGING")
-                                            (promise-then (with-mock-execute (git-sync--validate-and-run))
-                                                          (lambda (_)
-                                                            (should-not git-sync-execute-called)
-                                                            (funcall done))
-                                                          (lambda (err) (funcall done err)))))
+  "Test skip when special state."
+  (with-git-sync-test-repo '(:state "MERGING")
+                           (promise-then (with-mock-execute (git-sync--validate-and-run))
+                                         (lambda (_)
+                                           (should-not git-sync-execute-called)
+                                           (funcall done))
+                                         (lambda (err) (funcall done err)))))
 
 (ert-deftest-async git-sync-validate-and-run-normal (done)
-                   "Test run when normal."
-                   (with-git-sync-test-repo '()
-                                            (promise-then (with-mock-execute (git-sync--validate-and-run))
-                                                          (lambda (_)
-                                                            (should git-sync-execute-called)
-                                                            (funcall done))
-                                                          (lambda (err) (funcall done err)))))
+  "Test run when normal."
+  (with-git-sync-test-repo '()
+                           (promise-then (with-mock-execute (git-sync--validate-and-run))
+                                         (lambda (_)
+                                           (should git-sync-execute-called)
+                                           (funcall done))
+                                         (lambda (err) (funcall done err)))))
 
 (provide 'git-sync-mode-tests)
 ;;; git-sync-mode-tests.el ends here
