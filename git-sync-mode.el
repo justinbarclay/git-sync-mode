@@ -107,7 +107,7 @@ Possible values:
     (:special-state (all-the-icons-octicon "git-merge" :face 'warning))
     ((or :starting :committing :fetching :fast-forwarding)
      (all-the-icons-octicon "sync" :face 'all-the-icons-lyellow))
-    (_)))
+    (_ "")))
 
 (defun git-sync--state-icon (state)
   "Return an icon for STATE if available."
@@ -117,6 +117,16 @@ Possible values:
    ((and (featurep 'all-the-icons) (fboundp 'all-the-icons-octicon))
     (git-sync--all-the-icons-icon state))
    (t nil)))
+
+(defun git-sync--set-state (new-state &optional buffer)
+  "Set `git-sync-state' to NEW-STATE and run `git-sync-state-change-hook'.
+If BUFFER is non-nil, set the state in that buffer."
+  (let ((buf (or buffer (current-buffer))))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (setq git-sync-state new-state)
+        (git-sync--update-mode-line new-state)
+        (run-hooks 'git-sync-state-change-hook)))))
 
 (put 'git-sync-modeline-string 'risky-local-variable t)
 (defun git-sync--update-mode-line (state)
@@ -130,20 +140,10 @@ Possible values:
               (format " git-sync[%s]" (substring (symbol-name state) 1)))))
     (force-mode-line-update)))
 
-(defun git-sync--set-state (new-state &optional buffer)
-  "Set `git-sync-state' to NEW-STATE and run `git-sync-state-change-hook'.
-If BUFFER is non-nil, set the state in that buffer."
-  (let ((buf (or buffer (current-buffer))))
-    (when (buffer-live-p buf)
-      (with-current-buffer buf
-        (setq git-sync-state new-state)
-        (git-sync--update-mode-line new-state)
-        (run-hooks 'git-sync-state-change-hook)))))
-
 (defun git-sync--commit-message ()
   (format "changes from %s on %s" (system-name) (current-time-string)))
 
-(defun git-sync--sentinel-fn (process _event)
+(defun git-sync--process-buffer (process _event)
   "Colourizes the git-sync log buffer for `PROCESS' on `EVENT'."
   (let ((buf (process-buffer process)))
     (when (buffer-live-p buf)
@@ -171,7 +171,7 @@ If BUFFER is non-nil, set the state in that buffer."
 
 (defun git-sync--process-sentinel (process event)
   "Sentinel function for git-sync."
-  (git-sync--sentinel-fn process event)
+  (git-sync--process-buffer process event)
   (with-current-buffer (process-buffer process)
     (when (memq (process-status process) '(exit signal))
       (let ((resolve (process-get process 'git-sync-resolve))
@@ -205,7 +205,10 @@ otherwise it rejects with the process event."
                      (process-put process 'git-sync-reject reject)
                      (process-put process 'git-sync-ignore-error ignore-error))))))
 
-;; State functions
+;;;;;;;;;;
+;; Git State
+;;;;;;;;;;
+
 (async-defun git-sync--get-upstream-branch (dir)
   "Get the upstream branch for the current branch in `DIR`.
 
@@ -248,7 +251,10 @@ If no upstream branch is found, return nil."
      ((and git-dir (file-exists-p (expand-file-name "REVERT_HEAD" git-dir))) "REVERTING")
      (t "NORMAL"))))
 
-;; Guard functions
+;;;;;;;;;;
+;; Guards
+;;;;;;;;;;
+
 (async-defun git-sync--has-changes-p (dir)
   "Return non-nil if git detected changes in `DIR'."
   (let ((status (thread-first
@@ -268,7 +274,10 @@ If no upstream branch is found, return nil."
          (lock-file (and root (expand-file-name ".git/index.lock" root))))
     (and lock-file (file-exists-p lock-file))))
 
-;; Command generators
+;;;;;;;;;;
+;; Commands
+;;;;;;;;;;
+
 (defun git-sync--add-command ()
   "Return the git add command based on `git-sync-add-new-files'."
   (if git-sync-add-new-files
@@ -284,7 +293,20 @@ If no upstream branch is found, return nil."
          (when git-sync-skip-verify
            '("--no-verify"))))
 
-;; Execute
+(defun git-sync--allowed-directory (current-file)
+  "Return non-nil if CURRENT-FILE is in the allow list."
+  (and current-file
+       (not (minibufferp))
+       (cl-reduce (lambda (any-p allowed-dir)
+                    (or any-p
+                        (string-prefix-p (expand-file-name allowed-dir)
+                                         (expand-file-name current-file))))
+                  git-sync-allow-list
+                  :initial-value nil)))
+;;;;;;;;;;
+;; Sync
+;;;;;;;;;;
+
 (async-defun git-sync--execute (dir)
   "Execute the git-sync process in `DIR`.
 
