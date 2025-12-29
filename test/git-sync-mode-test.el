@@ -398,21 +398,21 @@ ARGS is a plist with keys :state (string) and :locked (boolean)."
 ;;; Tests for git-sync--repo-state
 ;;;---------------------------------------------------------------------
 
-(ert-deftest git-sync--is-locked-p-without-lock-file ()
+(ert-deftest git-sync--index-locked-p-without-lock-file ()
   "Test NORMAL state."
   (let* ((tmpdir (make-temp-file "git-sync-test" t))
          (gitdir (expand-file-name ".git" tmpdir)))
     (make-directory gitdir)
-    (should-not (git-sync--is-locked-p  tmpdir))
+    (should-not (git-sync--index-locked-p  tmpdir))
     (delete-directory tmpdir t)))
 
-(ert-deftest git-sync--is-locked-p-with-lock-file ()
+(ert-deftest git-sync--index-locked-p-with-lock-file ()
   "Test MERGING state."
   (let* ((tmpdir (make-temp-file "git-sync-test" t))
          (gitdir (expand-file-name ".git" tmpdir)))
     (make-directory gitdir)
     (write-region "" nil (expand-file-name "index.lock" gitdir))
-    (should (git-sync--is-locked-p tmpdir))
+    (should (git-sync--index-locked-p tmpdir))
     (delete-directory tmpdir t)))
 
 ;;;---------------------------------------------------------------------

@@ -281,7 +281,7 @@ If no upstream branch is found, return nil."
        (length> line 0))
      status)))
 
-(defun git-sync--is-locked-p (dir)
+(defun git-sync--index-locked-p (dir)
   "Return non-nil if a .git/index.lock file exists in the repository root of `DIR'."
   (let* ((root (locate-dominating-file dir ".git"))
          (lock-file (and root (expand-file-name ".git/index.lock" root))))
