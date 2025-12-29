@@ -30,6 +30,7 @@
 (require 'cl-lib)
 (require 'async-await)
 (require 'ansi-color)
+(require 'subr-x)
 
 (defgroup git-sync
   nil
@@ -113,6 +114,7 @@ Possible values:
    ((and (featurep 'all-the-icons) (fboundp 'all-the-icons-octicon))
     (git-sync--all-the-icons-icon state))
    (t nil)))
+
 (put 'git-sync-modeline-string 'risky-local-variable t)
 (defun git-sync--update-mode-line (state)
   "Update `git-sync-modeline-string` for STATE and refresh mode line."
@@ -188,17 +190,17 @@ On success the promise returns the process-status for the command
 otherwise it rejects with the process event."
   ;; Turn off pager
   (make-local-variable 'process-environment)
-  (setq process-environment (cons "GIT_PAGER=cat" process-environment))
-  (promise-new (lambda (resolve reject)
-                 (let* ((default-directory dir)
-                        (process (make-process :name "git-sync"
-                                               :buffer (get-buffer-create (format "*git-sync:%s*" default-directory))
-                                               :filter #'git-sync--process-filter
-                                               :command command
-                                               :sentinel #'git-sync--process-sentinel)))
-                   (process-put process 'git-sync-resolve resolve)
-                   (process-put process 'git-sync-reject reject)
-                   (process-put process 'git-sync-ignore-error ignore-error)))))
+  (let  ((process-environment (cons "GIT_PAGER=cat" process-environment)))
+    (promise-new (lambda (resolve reject)
+                   (let* ((default-directory dir)
+                          (process (make-process :name "git-sync"
+                                                 :buffer (get-buffer-create (format "*git-sync:%s*" default-directory))
+                                                 :filter #'git-sync--process-filter
+                                                 :command command
+                                                 :sentinel #'git-sync--process-sentinel)))
+                     (process-put process 'git-sync-resolve resolve)
+                     (process-put process 'git-sync-reject reject)
+                     (process-put process 'git-sync-ignore-error ignore-error))))))
 
 ;; State functions
 (async-defun git-sync--get-upstream-branch (dir)
@@ -245,13 +247,17 @@ If no upstream branch is found, return nil."
 
 ;; Guard functions
 (async-defun git-sync--has-changes-p (dir)
-  "Return non-nil if there are staged changes in `DIR'."
-  (or (length>
-       (await (git-sync--execute-command '("git" "diff" "--cached" "--name-only") dir))
-       0)
-      (length>
-       (await (git-sync--execute-command '("git" "diff" "--name-only") dir))
-       0)))
+  "Return non-nil if git detected changes in `DIR'."
+  (let ((status (thread-first
+                  '("git" "status" "--porcelain")
+                  (git-sync--execute-command dir)
+                  (await)
+                  (string-trim)
+                  (string-split "\n"))))
+    (any
+     (lambda (line)
+       (length> line 0))
+     status)))
 
 (defun git-sync--is-locked-p (dir)
   "Return non-nil if a .git/index.lock file exists in the repository root of `DIR'."
@@ -326,7 +332,7 @@ The git sync process includes:
 
 (async-defun git-sync--validate-and-run ()
   "Validate the git repository state and run git-sync."
-  (let* ((dir default-directory))
+  (let* ((dir (locate-dominating-file default-directory ".git")))
     ;; We await here to ensure the async function completes before exiting.
     (cond
      ((git-sync--is-locked-p dir)
