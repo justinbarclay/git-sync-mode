@@ -84,6 +84,9 @@ Possible values:
   :type 'hook
   :group 'git-sync)
 
+(defvar git-sync--locks '()
+  "A plist tracking locks for git-sync per directory.")
+
 (defun git-sync--nerd-icons-icon (state)
   "Return nerd-icon for STATE."
   (pcase state
@@ -330,34 +333,52 @@ The git sync process includes:
      (message "git-sync failed. Check *git-sync:%s* buffer." dir)
      (git-sync--set-state :failed))))
 
+;; We need to lock based on root dir because Emacs can open up
+;; multiple files at once in different buffers, and each buffer would
+;; try to run git-sync independently. For example, this can happen
+;; when opening up org-agenda and your agenda is made up of multiple
+;; files from the same repo.
+(defun git-sync--lock (dir)
+  "Test if the mutex for `DIR' is set, if not set it.
+
+Returns t if the mutex was successfully set, nil otherwise."
+  (if (plist-get git-sync--locks
+                 dir
+                 #'equal)
+      nil
+    (progn
+      (setq git-sync--locks (plist-put git-sync--locks dir 't #'equal))
+      't)))
+
+(defun git-sync--unlock (dir)
+  "Unlock the mutex for DIR."
+  (setq git-sync--locks (plist-put git-sync--locks dir nil #'equal)))
+
 (async-defun git-sync--validate-and-run ()
   "Validate the git repository state and run git-sync."
-  (let* ((dir (locate-dominating-file default-directory ".git")))
-    ;; We await here to ensure the async function completes before exiting.
-    (cond
-     ((git-sync--is-locked-p dir)
-      (git-sync--set-state :locked)
-      (await (promise-resolve nil)))
-     ((not (string= (git-sync--repo-state dir) "NORMAL"))
-      (git-sync--set-state :special-state)
-      (await (promise-resolve nil)))
-     (t
-      (git-sync--set-state :starting)
-      (await (git-sync--execute dir))))))
-
-(defun git-sync--allowed-directory (current-file)
-  "Return non-nil if CURRENT-FILE is in the allow list."
-  (and current-file
-       (not (minibufferp))
-       (cl-reduce (lambda (any-p allowed-dir)
-                    (or any-p
-                        (string-prefix-p (expand-file-name allowed-dir)
-                                         (expand-file-name current-file))))
-                  git-sync-allow-list
-                  :initial-value nil)))
+  (when-let* ((dir (locate-dominating-file default-directory ".git"))
+              (has-lock (and dir
+                             ;; Skip running if another git-sync operation is in effect
+                             (git-sync--lock dir))))
+    (condition-case err
+        (progn
+          (cond
+           ((git-sync--index-locked-p dir)
+            (git-sync--set-state :locked)
+            (await (promise-resolve nil)))
+           ((not (string= (git-sync--repo-state dir) "NORMAL"))
+            (git-sync--set-state :special-state)
+            (await (promise-resolve nil)))
+           (t
+            (git-sync--set-state :starting)
+            (await (git-sync--execute dir))))
+          (git-sync--unlock dir))
+      (error
+       (git-sync--unlock dir)
+       (message "git-sync: Error in validate-and-run: %s" err)))))
 
 (defun git-sync--maybe ()
-  "Determine if current buffer is apart of allowed directory."
+  "Determine if current buffer is a child of the allowed directory."
   (when (git-sync--allowed-directory (buffer-file-name))
     (git-sync-mode)))
 
