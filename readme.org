@@ -10,8 +10,8 @@
 #+begin_src elisp
 (use-package git-sync-mode
   :vc (:url "https://github.com/justinbarclay/git-sync-mode" :rev :newest)
+  :hook (after-init . git-sync-global-mode)
   :config
-  (git-sync-global-mode)
   (add-to-list 'git-sync-allow-list (expand-file-name "~/src/my-project")))
 #+end_src
 
@@ -59,6 +59,34 @@ You can also enable ~git-sync-mode~ on a per-project basis using ~.dir-locals.el
 - ~git-sync-add-new-files~: If non-nil, ~git-sync-mode~ will add new files to the repository.
 
 - ~git-sync-skip-verify~: If non-nil, ~git-sync-mode~ will skip pre-commit and commit-msg hooks.
+
+*** Integration with mode-lines
+
+~git-sync-mode~ automatically displays its status in the standard Emacs mode-line.
+
+**** Icons
+
+If you have [[https://github.com/rainstormstudio/nerd-icons.el][nerd-icons]] or [[https://github.com/domtronn/all-the-icons.el][all-the-icons]] installed and loaded, ~git-sync-mode~ will automatically use them to display a graphical status icon next to the mode name.
+
+**** Custom Mode-lines
+
+If you use a custom mode-line package (such as ~doom-modeline~ or ~lambda-line~), the default "lighter" might not be visible or sufficient. In these cases, you can manually integrate the sync status.
+
+You can access the current state via the variable ~git-sync-state~ and get the corresponding icon using the function ~git-sync--state-icon~.
+
+Here is an example of how to integrate ~git-sync-mode~ with [[https://github.com/lambda-emacs/lambda-line][lambda-line]]:
+
+#+begin_src elisp
+(use-package git-sync-mode
+  :commands (git-sync-mode git-sync-global-mode git-sync--state-icon)
+  :vc (:url "https://github.com/justinbarclay/git-sync-mode" :rev :newest)
+  :config
+  (defun lambda-line-git-sync-info ()
+    (concat (lambda-line-vc-project-branch)
+            ":"
+            (git-sync--state-icon git-sync-state)))
+  (setq-local lambda-line-default-vc-mode-function #'lambda-line-git-sync-info))
+#+end_src
 
 ** How it works
 
