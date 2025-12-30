@@ -73,9 +73,6 @@ git-sync-mode will be enabled."
   :type 'boolean
   :group 'git-sync)
 
-(defvar-local git-sync--last-output nil
-  "Holds the last output from git-sync process.")
-
 (defvar-local git-sync-state nil
   "Current state of git-sync.
 
@@ -180,7 +177,7 @@ If BUFFER is non-nil, set the state in that buffer."
           (set-marker (process-mark process) (point)))
         (when moving
           (goto-char (process-mark process)))
-        (setq-local git-sync--last-output string)))))
+        (process-put process 'git-sync-output string)))))
 
 (defun git-sync--process-sentinel (process event)
   "Sentinel function for git-sync."
@@ -192,7 +189,8 @@ If BUFFER is non-nil, set the state in that buffer."
             (ignore-error (process-get process 'git-sync-ignore-error)))
         (if (or ignore-error
                 (zerop (process-exit-status process)))
-            (funcall resolve (string-trim (or git-sync--last-output "")))
+            (funcall resolve (string-trim (or (process-get process 'git-sync-output)
+                                              "")))
           (funcall reject (format "Command failed: %s" event)))))))
 
 (defun git-sync--execute-command (command dir &optional ignore-error)
