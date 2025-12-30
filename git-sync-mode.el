@@ -1,4 +1,4 @@
-;;; git-sync-mode.el --- Sync your git repositories on save  -*- lexical-binding: t; -*-
+;;; git-sync-mode.el --- Automatically commit and sync local changes with the remote on file save  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2024-2025  Justin Barclay
 
@@ -34,7 +34,7 @@
 ;; 4. Automatically push, fast-forward, or rebase to fully sync.
 ;;
 ;; To ensure safety, `git-sync-mode` will only activate in repositories
-;; whose paths are included in the `git-sync-allow-list`. It also includes
+;; whose paths are included in the `git-sync-allow-list`.  It also includes
 ;; safeguards to prevent execution if the repository is in a special state
 ;; (e.g., during a merge or rebase) or if it is locked.
 
@@ -47,7 +47,7 @@
 
 (defgroup git-sync
   nil
-  "Customizations for git-sync"
+  "Customizations for git-sync."
   :group 'vc)
 
 (defcustom git-sync-allow-list '()
@@ -153,7 +153,7 @@ If BUFFER is non-nil, set the state in that buffer."
 (defun git-sync--commit-message ()
   (format "changes from %s on %s" (system-name) (current-time-string)))
 
-(defun git-sync--process-buffer (process _event)
+(defun git-sync--process-buffer (process)
   "Colourizes the git-sync log buffer for `PROCESS' on `EVENT'."
   (let ((buf (process-buffer process)))
     (when (buffer-live-p buf)
@@ -164,8 +164,8 @@ If BUFFER is non-nil, set the state in that buffer."
           (unless (derived-mode-p 'special-mode)
             (special-mode)))))))
 
-(defun git-sync--process-filter (process string)
-  "Filter function for git-sync."
+(defun git-sync--process-filter (process output)
+  "Tracks most recent `OUTPUT' from `PROCESS' to be able to return from promise."
   (when (buffer-live-p (process-buffer process))
     (with-current-buffer (process-buffer process)
       (let ((moving (= (point) (process-mark process)))
@@ -173,15 +173,17 @@ If BUFFER is non-nil, set the state in that buffer."
         (save-excursion
           ;; Insert the text, advancing the process marker.
           (goto-char (process-mark process))
-          (insert string)
+          (insert output)
           (set-marker (process-mark process) (point)))
         (when moving
           (goto-char (process-mark process)))
-        (process-put process 'git-sync-output string)))))
+        (process-put process 'git-sync-output output)))))
 
 (defun git-sync--process-sentinel (process event)
-  "Sentinel function for git-sync."
-  (git-sync--process-buffer process event)
+  "Resolves the promise for `PROCESS'.
+
+`EVENT' is echoed to the user if the process fails."
+  (git-sync--process-buffer process)
   (with-current-buffer (process-buffer process)
     (when (memq (process-status process) '(exit signal))
       (let ((resolve (process-get process 'git-sync-resolve))
@@ -200,7 +202,7 @@ If `DIR' is provided, set `default-directory' to it for the command.
 
 If `IGNORE-ERROR' is non-nil, resolve even if the command fails.
 
-On success the promise returns the process-status for the command
+On success the promise returns the `process-status' for the command
 otherwise it rejects with the process event."
   ;; Turn off pager
   (make-local-variable 'process-environment)
@@ -329,7 +331,7 @@ The git sync process includes:
   4.  Determining sync state
   5.  Performing necessary actions based on sync state
       (fast-forward, rebase, push)."
-  (condition-case err
+  (condition-case _err
       (let (upstream)
         (when (await (git-sync--has-changes-p dir))
           (git-sync--set-state :committing)
