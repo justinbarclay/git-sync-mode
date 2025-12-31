@@ -1,0 +1,68 @@
+name: Coverage report
+
+on: [pull_request]
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Eask
+        uses: emacs-eask/setup-eask@master
+        with:
+          version: "snapshot"
+
+      - name: Set up Emacs
+        uses: purcell/setup-emacs@master
+        with:
+          version: "snapshot"
+
+      - name: make coverage dir
+        run: mkdir coverage
+
+      - name: Run coverage
+        run: make coverage
+
+      - name: Post Coverage Comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const coverageReport = JSON.parse(fs.readFileSync('coverage/coverage.json', 'utf8'));
+
+            let body = '<details><summary>Coverage Report</summary>\n\n';
+            body += '| File | Coverage |\n';
+            body += '|------|----------|\n';
+
+            let totalExecutable = 0;
+            let totalExecuted = 0;
+
+            for (const file of coverageReport.source_files) {
+              const coverageData = file.coverage;
+              const executableLines = coverageData.filter(l => l !== null).length;
+              const executedLines = coverageData.filter(l => l !== null && l > 0).length;
+              const coverage = executableLines > 0 ? (executedLines / executableLines) * 100 : 100;
+
+              totalExecutable += executableLines;
+              totalExecuted += executedLines;
+
+              body += `| ${file.name} | ${coverage.toFixed(2)}% (${executedLines}/${executableLines}) |\n`;
+            }
+
+            const totalCoverage = totalExecutable > 0 ? (totalExecuted / totalExecutable) * 100 : 100;
+
+            body += `\n**Total Coverage:** ${totalCoverage.toFixed(2)}% (${totalExecuted}/${totalExecutable})\n`;
+            body += '</details>';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
