@@ -1,0 +1,27 @@
+name: Run tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Eask
+        uses: emacs-eask/setup-eask@master
+        with:
+          version: "snapshot"
+
+      - name: Set up Emacs
+        uses: purcell/setup-emacs@master
+        with:
+          version: "snapshot"
+
+      - name: Run tests
+        run: make test
