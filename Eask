@@ -2,7 +2,7 @@
 
 (package "git-sync-mode"
          "0.5.0"
-         "Automatically commit and sync local changes with the remote on file save")
+         "Automatically commit and sync local changes")
 
 (website-url "https://github.com/justinbarclay/git-sync-mode")
 (keywords "vc" "convenience")

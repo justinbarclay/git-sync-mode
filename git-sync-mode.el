@@ -1,4 +1,4 @@
-;;; git-sync-mode.el --- Automatically commit and sync local changes with the remote on file save  -*- lexical-binding: t; -*-
+;;; git-sync-mode.el --- Automatically commit and sync local changes  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2024-2025  Justin Barclay
 
@@ -44,6 +44,11 @@
 (require 'async-await)
 (require 'ansi-color)
 (require 'subr-x)
+
+(eval-when-compile
+  (declare-function all-the-icons-octicon "ext:all-the-icons")
+  (declare-function nerd-icons-faicon "ext:nerd-icons")
+  (declare-function nerd-icons-octicon "ext:nerd-icons"))
 
 (defgroup git-sync
   nil
@@ -122,7 +127,9 @@ Possible values:
 (defun git-sync--state-icon (state)
   "Return an icon for STATE if available."
   (cond
-   ((and (featurep 'nerd-icons) (fboundp 'nerd-icons-octicon))
+   ((and (featurep 'nerd-icons)
+         (fboundp 'nerd-icons-octicon)
+         (fboundp 'nerd-icons-faicon))
     (git-sync--nerd-icons-icon state))
    ((and (featurep 'all-the-icons) (fboundp 'all-the-icons-octicon))
     (git-sync--all-the-icons-icon state))
@@ -140,7 +147,7 @@ If BUFFER is non-nil, set the state in that buffer."
 
 (put 'git-sync-modeline-string 'risky-local-variable t)
 (defun git-sync--update-mode-line (state)
-  "Update `git-sync-modeline-string` for STATE and refresh mode line."
+  "Update `git-sync-modeline-string' for STATE and refresh mode line."
   (let ((icon (git-sync--state-icon state)))
     (setq git-sync-modeline-string
           (if icon
@@ -154,7 +161,7 @@ If BUFFER is non-nil, set the state in that buffer."
   (format "changes from %s on %s" (system-name) (current-time-string)))
 
 (defun git-sync--process-buffer (process)
-  "Colourizes the git-sync log buffer for `PROCESS' on `EVENT'."
+  "Colourizes the git-sync log buffer for PROCESS on EVENT."
   (let ((buf (process-buffer process)))
     (when (buffer-live-p buf)
       (let ((inhibit-read-only t))
@@ -165,7 +172,7 @@ If BUFFER is non-nil, set the state in that buffer."
             (special-mode)))))))
 
 (defun git-sync--process-filter (process output)
-  "Tracks most recent `OUTPUT' from `PROCESS' to be able to return from promise."
+  "Tracks most recent OUTPUT from PROCESS to be able to return from promise."
   (when (buffer-live-p (process-buffer process))
     (with-current-buffer (process-buffer process)
       (let ((moving (= (point) (process-mark process)))
@@ -180,9 +187,9 @@ If BUFFER is non-nil, set the state in that buffer."
         (process-put process 'git-sync-output output)))))
 
 (defun git-sync--process-sentinel (process event)
-  "Resolves the promise for `PROCESS'.
+  "Resolves the promise for PROCESS.
 
-`EVENT' is echoed to the user if the process fails."
+EVENT is echoed to the user if the process fails."
   (git-sync--process-buffer process)
   (with-current-buffer (process-buffer process)
     (when (memq (process-status process) '(exit signal))
@@ -196,11 +203,11 @@ If BUFFER is non-nil, set the state in that buffer."
           (funcall reject (format "Command failed: %s" event)))))))
 
 (defun git-sync--execute-command (command dir &optional ignore-error)
-  "Execute `COMMAND' as a promise in the git-sync buffer.
+  "Execute COMMAND as a promise in the git-sync buffer.
 
-If `DIR' is provided, set `default-directory' to it for the command.
+If DIR is provided, set `default-directory' to it for the command.
 
-If `IGNORE-ERROR' is non-nil, resolve even if the command fails.
+If IGNORE-ERROR is non-nil, resolve even if the command fails.
 
 On success the promise returns the `process-status' for the command
 otherwise it rejects with the process event."
@@ -223,7 +230,7 @@ otherwise it rejects with the process event."
 ;;;;;;;;;;
 
 (async-defun git-sync--get-upstream-branch (dir)
-  "Get the upstream branch for the current branch in `DIR`.
+  "Get the upstream branch for the current branch in DIR.
 
 If no upstream branch is found, return nil."
   (condition-case _err
@@ -236,7 +243,7 @@ If no upstream branch is found, return nil."
      nil)))
 
 (async-defun git-sync--get-sync-state (dir upstream)
-  "Get the sync state between HEAD and `UPSTREAM` in `DIR`."
+  "Get the sync state between HEAD and UPSTREAM in DIR."
   (let* ((output (string-trim
                   (await (git-sync--execute-command
                           (list "git" "rev-list" "--count" "--left-right" (concat upstream "...HEAD"))
@@ -251,7 +258,7 @@ If no upstream branch is found, return nil."
      (t (error "Could not determine sync state")))))
 
 (defun git-sync--repo-state (dir)
-  "Return the current git repository state in `DIR'."
+  "Return the current git repository state in DIR."
   (let* ((root (locate-dominating-file dir ".git"))
          (git-dir (and root (expand-file-name ".git" root))))
     (cond
@@ -269,20 +276,21 @@ If no upstream branch is found, return nil."
 ;;;;;;;;;;
 
 (async-defun git-sync--has-changes-p (dir)
-  "Return non-nil if git detected changes in `DIR'."
+  "Return non-nil if git detected changes in DIR."
   (let ((status (thread-first
                   '("git" "status" "--porcelain")
                   (git-sync--execute-command dir)
                   (await)
                   (string-trim)
                   (string-split "\n"))))
-    (any
-     (lambda (line)
-       (length> line 0))
-     status)))
+    (cl-reduce (lambda (any-p line)
+                 (or any-p
+                     (length> line 0)))
+               status
+               :initial-value nil)))
 
 (defun git-sync--index-locked-p (dir)
-  "Return non-nil if a .git/index.lock file exists in the repository root of `DIR'."
+  "Return non-nil if a .git/index.lock file exists in the repository root of DIR."
   (let* ((root (locate-dominating-file dir ".git"))
          (lock-file (and root (expand-file-name ".git/index.lock" root))))
     (and lock-file (file-exists-p lock-file))))
@@ -321,7 +329,7 @@ If no upstream branch is found, return nil."
 ;;;;;;;;;;
 
 (async-defun git-sync--execute (dir)
-  "Execute the git-sync process in `DIR`.
+  "Execute the git-sync process in DIR.
 
 The git sync process includes:
   1.  Committing local changes
@@ -374,7 +382,7 @@ The git sync process includes:
 ;; when opening up org-agenda and your agenda is made up of multiple
 ;; files from the same repo.
 (defun git-sync--lock (dir)
-  "Test if the mutex for `DIR' is set, if not set it.
+  "Test if the mutex for DIR is set, if not set it.
 
 Returns t if the mutex was successfully set, nil otherwise."
   (if (plist-get git-sync--locks
